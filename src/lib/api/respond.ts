@@ -35,6 +35,20 @@ export function parseOrThrow<T extends z.ZodType>(schema: T, input: unknown): z.
   return result.data;
 }
 
+/** Reads a JSON body and validates it; malformed JSON is a BAD_REQUEST too. */
+export async function parseJsonBody<T extends z.ZodType>(
+  request: Request,
+  schema: T,
+): Promise<z.infer<T>> {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    throw new AppError("BAD_REQUEST", "Request body must be valid JSON");
+  }
+  return parseOrThrow(schema, body);
+}
+
 /**
  * Wraps a route handler so every failure leaves as the standard envelope.
  * Unknown errors are logged and reported as INTERNAL without leaking detail.
