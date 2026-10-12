@@ -1,20 +1,19 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useCallback, useTransition } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 
-import { Button } from "@/components/ui/button";
 import { apiResponseSchema } from "@/schemas/api";
 
 const logoutResponseSchema = apiResponseSchema(z.object({ signedOut: z.literal(true) }));
 
-export function SignOutButton() {
+export function useSignOut() {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
-  function signOut() {
+  const signOut = useCallback(() => {
     startTransition(async () => {
       const response = await fetch("/api/auth/logout", { method: "POST" });
       const body = logoutResponseSchema.safeParse(await response.json());
@@ -25,11 +24,7 @@ export function SignOutButton() {
       router.replace("/login");
       router.refresh();
     });
-  }
+  }, [router]);
 
-  return (
-    <Button variant="ghost" size="sm" onClick={signOut} disabled={pending}>
-      {pending ? "Signing out…" : "Sign out"}
-    </Button>
-  );
+  return { signOut, pending };
 }
