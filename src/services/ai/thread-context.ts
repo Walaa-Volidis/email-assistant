@@ -31,9 +31,21 @@ export function stripQuotedText(body: string): string {
     .trim();
 }
 
+/**
+ * Escapes text placed inside the <thread>/<message> tags, so an email can't
+ * close the untrusted block early and speak as the system or the user.
+ */
+export function escapeForPrompt(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+const USER_MARKER = "(the user)";
+
 function formatAddress(address: EmailAddress, self: string): string {
-  const label = address.name ? `${address.name} <${address.email}>` : address.email;
-  return address.email.toLowerCase() === self ? `${label} (the user)` : label;
+  // Only we may label someone as the user; strip the marker from senders' names.
+  const name = address.name?.replace(/\(\s*the\s+user\s*\)/gi, "").trim();
+  const label = name ? `${name} <${address.email}>` : address.email;
+  return address.email.toLowerCase() === self ? `${label} ${USER_MARKER}` : label;
 }
 
 function truncate(text: string, max: number): string {
@@ -65,7 +77,7 @@ export function serializeThread(thread: EmailThread, userEmail: string): string 
       .filter(Boolean)
       .join("\n");
 
-    return `${header}\n\n${fits ? body : `[earlier message, shortened] ${message.snippet}`}`;
+    return escapeForPrompt(`${header}\n\n${fits ? body : `[earlier message, shortened] ${message.snippet}`}`);
   });
 
   const messages = rendered
@@ -73,5 +85,6 @@ export function serializeThread(thread: EmailThread, userEmail: string): string 
     .map((text, index) => `<message index="${index + 1}">\n${text}\n</message>`)
     .join("\n\n");
 
-  return `<thread subject="${thread.subject.replace(/"/g, "'")}" messages="${thread.messageCount}">\n${messages}\n</thread>`;
+  const subject = escapeForPrompt(thread.subject).replace(/"/g, "&quot;");
+  return `<thread subject="${subject}" messages="${thread.messageCount}">\n${messages}\n</thread>`;
 }

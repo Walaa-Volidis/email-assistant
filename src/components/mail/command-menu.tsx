@@ -5,6 +5,7 @@ import {
   KeyboardIcon,
   ListChecksIcon,
   LogOutIcon,
+  MailIcon,
   MoonIcon,
   PenLineIcon,
   ReplyIcon,
@@ -27,7 +28,7 @@ import {
 import { MAILBOXES } from "@/lib/mail";
 import { type Mailbox } from "@/schemas/email";
 
-export type ThreadCommand = "reply" | "archive" | "star" | "summarize" | "draft" | "follow-ups";
+export type ThreadCommand = "reply" | "archive" | "star" | "unread" | "summarize" | "draft" | "follow-ups";
 
 type CommandMenuProps = {
   open: boolean;
@@ -90,6 +91,9 @@ export function CommandMenu({
               </CommandItem>
               <CommandItem onSelect={run(() => onThreadCommand("star"))}>
                 <StarIcon /> Star or unstar <CommandShortcut>S</CommandShortcut>
+              </CommandItem>
+              <CommandItem onSelect={run(() => onThreadCommand("unread"))}>
+                <MailIcon /> Mark unread <CommandShortcut>U</CommandShortcut>
               </CommandItem>
             </CommandGroup>
             <CommandSeparator />

@@ -18,15 +18,19 @@ import {
 
 const UNKNOWN_SENDER = { name: "Unknown sender", email: "unknown@invalid.example" };
 
+/** A malformed or missing date becomes the epoch instead of throwing. */
+function toIsoDate(value: number | string | null): string {
+  const date = new Date(value ?? 0);
+  return Number.isNaN(date.getTime()) ? new Date(0).toISOString() : date.toISOString();
+}
+
 /** Maps a raw Gmail message onto our domain shape; null if it can't be read. */
 export function toEmailMessage(raw: gmail_v1.Schema$Message): EmailMessage | null {
   if (!raw.id || !raw.threadId) return null;
   const payload = raw.payload;
   const { text, html } = extractBodies(payload);
   const labelIds = raw.labelIds ?? [];
-  const sentAt = raw.internalDate
-    ? new Date(Number(raw.internalDate)).toISOString()
-    : new Date(getHeader(payload, "Date") ?? 0).toISOString();
+  const sentAt = toIsoDate(raw.internalDate ? Number(raw.internalDate) : getHeader(payload, "Date"));
 
   return {
     id: raw.id,

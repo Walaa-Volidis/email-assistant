@@ -11,9 +11,11 @@ import {
   type AssistantTab,
 } from "@/components/mail/assistant-panel";
 import { CommandMenu, type ThreadCommand } from "@/components/mail/command-menu";
+import { ComposeDialog, EMPTY_COMPOSE, type ComposeDraft } from "@/components/mail/compose-dialog";
 import {
   useAssistant,
   useMailboxCounts,
+  useSendMessage,
   useSendReply,
   useThread,
   useThreadAction,
@@ -33,7 +35,12 @@ import { useStoredFlag } from "@/hooks/use-stored-flag";
 import { errorMessage } from "@/lib/api/client";
 import { INVERSE_ACTION, MAILBOXES, replyTarget, stillInMailbox } from "@/lib/mail";
 import { type SessionUser } from "@/schemas/auth";
-import { type Mailbox, type ThreadAction, type ThreadListItem } from "@/schemas/email";
+import {
+  type ComposeRequest,
+  type Mailbox,
+  type ThreadAction,
+  type ThreadListItem,
+} from "@/schemas/email";
 
 type ComposerState = { open: boolean; body: string };
 const CLOSED: ComposerState = { open: false, body: "" };
@@ -58,6 +65,8 @@ export function MailWorkspace({ user }: { user: SessionUser }) {
   const [composers, setComposers] = useState<Record<string, ComposerState>>({});
   const [commandOpen, setCommandOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeDraft, setComposeDraft] = useState<ComposeDraft>(EMPTY_COMPOSE);
 
   const searchRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -68,6 +77,7 @@ export function MailWorkspace({ user }: { user: SessionUser }) {
   const counts = useMailboxCounts();
   const { mutate: runAction } = useThreadAction();
   const sendReply = useSendReply();
+  const sendMessage = useSendMessage();
   const assistant = useAssistant(threadId);
 
   const visible = useMemo(() => {
@@ -85,17 +95,48 @@ export function MailWorkspace({ user }: { user: SessionUser }) {
   const composer = (threadId && composers[threadId]) || CLOSED;
   const showAssistant = assistantOpen && isWide && threadId !== null;
 
-  // Opening an unread thread marks it read, in Gmail too.
+  // Opening an unread thread marks it read, in Gmail too, once per opening,
+  // so "mark unread" isn't immediately undone.
+  const autoReadRef = useRef<string | null>(null);
   useEffect(() => {
-    if (thread?.isUnread) runAction({ threadId: thread.id, action: "markRead" });
-  }, [thread?.id, thread?.isUnread, runAction]);
+    if (thread?.isUnread && autoReadRef.current !== thread.id) {
+      autoReadRef.current = thread.id;
+      runAction({ threadId: thread.id, action: "markRead", subject: thread.subject });
+    }
+  }, [thread, runAction]);
 
   function toggleAssistant(open = !assistantOpen) {
     setAssistantOpen(open);
   }
 
   function openThread(id: string | null) {
+    autoReadRef.current = null;
     navigate({ t: id });
+  }
+
+  /** Like Gmail: marking a thread unread closes it so it stays unread. */
+  function markUnread() {
+    if (!threadId) return;
+    act("markUnread", threadId, thread?.subject ?? listItem?.subject ?? "");
+    openThread(null);
+    // Keep the auto-read effect from re-reading it before the URL change lands.
+    autoReadRef.current = threadId;
+  }
+
+  function openCompose() {
+    setComposeOpen(true);
+  }
+
+  function sendNewMessage(message: ComposeRequest) {
+    sendMessage.mutate(message, {
+      onSuccess: () => {
+        setComposeOpen(false);
+        setComposeDraft(EMPTY_COMPOSE);
+        toast("Message sent", { description: message.subject || "(no subject)" });
+      },
+      // The draft stays in the dialog so nothing is lost.
+      onError: (error) => toast.error(errorMessage(error)),
+    });
   }
 
   function step(delta: 1 | -1) {
@@ -114,12 +155,7 @@ export function MailWorkspace({ user }: { user: SessionUser }) {
   }
 
   function act(action: ThreadAction, id: string, subject: string) {
-    runAction(
-      { threadId: id, action },
-      {
-        onError: (error) => toast.error(errorMessage(error), { description: subject }),
-      },
-    );
+    runAction({ threadId: id, action, subject });
     const message = ACTION_TOASTS[action];
     if (message) {
       toast(message, {
@@ -200,6 +236,8 @@ export function MailWorkspace({ user }: { user: SessionUser }) {
         return removeAndAdvance("archive");
       case "star":
         return toggleStar();
+      case "unread":
+        return markUnread();
       case "summarize":
         toggleAssistant(true);
         setAssistantTab("brief");
@@ -214,9 +252,6 @@ export function MailWorkspace({ user }: { user: SessionUser }) {
     }
   }
 
-  function notConnected(what: string) {
-    toast(`${what} isn't available yet`, { description: "Reply from an open thread for now." });
-  }
 
   const hotkeys: Hotkey[] = [
     { keys: "j", handler: () => step(1) },
@@ -227,7 +262,8 @@ export function MailWorkspace({ user }: { user: SessionUser }) {
     { keys: "/", handler: () => searchRef.current?.focus() },
     { keys: "mod+k", handler: () => setCommandOpen((open) => !open), allowInInput: true },
     { keys: "?", handler: () => setShortcutsOpen(true) },
-    { keys: "c", handler: () => notConnected("New message") },
+    { keys: "c", handler: openCompose },
+    { keys: "u", handler: markUnread },
     { keys: "r", handler: openReply },
     { keys: "e", handler: () => removeAndAdvance("archive") },
     { keys: "#", handler: () => removeAndAdvance("trash") },
@@ -238,7 +274,7 @@ export function MailWorkspace({ user }: { user: SessionUser }) {
     { keys: "3", handler: () => setAssistantTab("follow-ups") },
     ...MAILBOXES.map((box) => ({ keys: `g ${box.hotkey}`, handler: () => selectMailbox(box.id) })),
   ];
-  useHotkeys(hotkeys, !commandOpen && !shortcutsOpen);
+  useHotkeys(hotkeys, !commandOpen && !shortcutsOpen && !composeOpen);
 
   const sidebar = (
     <Sidebar
@@ -246,7 +282,7 @@ export function MailWorkspace({ user }: { user: SessionUser }) {
       counts={counts.data}
       mailbox={mailbox}
       onSelectMailbox={selectMailbox}
-      onCompose={() => notConnected("New message")}
+      onCompose={openCompose}
       onOpenCommand={() => setCommandOpen(true)}
       onOpenShortcuts={() => setShortcutsOpen(true)}
       onSignOut={signOut}
@@ -352,11 +388,19 @@ export function MailWorkspace({ user }: { user: SessionUser }) {
         hasThread={threadId !== null}
         onMailbox={selectMailbox}
         onThreadCommand={handleThreadCommand}
-        onCompose={() => notConnected("New message")}
+        onCompose={openCompose}
         onShortcuts={() => setShortcutsOpen(true)}
         onSignOut={signOut}
       />
       <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+      <ComposeDialog
+        open={composeOpen}
+        draft={composeDraft}
+        sending={sendMessage.isPending}
+        onDraftChange={setComposeDraft}
+        onOpenChange={setComposeOpen}
+        onSend={sendNewMessage}
+      />
     </div>
   );
 }

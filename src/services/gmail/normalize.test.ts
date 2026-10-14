@@ -87,3 +87,13 @@ describe("toEmailThread", () => {
     expect(toEmailThread({ id: "t1", messages: [] })).toBeNull();
   });
 });
+
+describe("toEmailThread dates", () => {
+  it("survives a malformed Date header with no internalDate", () => {
+    const thread = toEmailThread({
+      id: "t9",
+      messages: [{ id: "m9", threadId: "t9", payload: { headers: [{ name: "Date", value: "not a date" }, { name: "From", value: "a@b.com" }] } }],
+    });
+    expect(thread!.messages[0]!.sentAt).toBe("1970-01-01T00:00:00.000Z");
+  });
+});

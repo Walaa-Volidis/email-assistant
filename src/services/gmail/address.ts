@@ -52,9 +52,13 @@ function splitAddressList(header: string): string[] {
  */
 export function parseAddressList(header: string | null | undefined): EmailAddress[] {
   if (!header) return [];
-  return splitAddressList(decodeEncodedWords(header)).flatMap((entry) => {
+  // Split the raw header first and decode only display names: decoding first
+  // would let an encoded name smuggle in extra "<address>" entries.
+  return splitAddressList(header).flatMap((entry) => {
     const angled = entry.match(/^(.*?)<([^>]+)>\s*$/);
-    const rawName = angled ? angled[1]!.trim().replace(/^"(.*)"$/, "$1").trim() : "";
+    const rawName = angled
+      ? decodeEncodedWords(angled[1]!.trim().replace(/^"(.*)"$/, "$1")).replace(/[<>]/g, "").trim()
+      : "";
     const email = (angled ? angled[2]! : entry).trim().toLowerCase();
     const parsed = ZEmailAddressSchema.safeParse({ name: rawName || null, email });
     return parsed.success ? [parsed.data] : [];

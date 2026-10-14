@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { buildReplyMime, formatAddress, replySubject } from "@/services/gmail/compose";
+import {
+  buildNewMessageMime,
+  buildReplyMime,
+  formatAddress,
+  replySubject,
+} from "@/services/gmail/compose";
 
 function decode(raw: string) {
   const text = Buffer.from(raw, "base64url").toString("utf8");
@@ -43,6 +48,17 @@ describe("buildReplyMime", () => {
   });
 });
 
+describe("buildNewMessageMime", () => {
+  it("keeps the subject as typed and adds no threading headers", () => {
+    const { head } = decode(
+      buildNewMessageMime({ to: [{ name: null, email: "a@b.com" }], cc: [], subject: "Kickoff", body: "x" }),
+    );
+    expect(head).toContain("Subject: Kickoff");
+    expect(head).not.toContain("In-Reply-To");
+    expect(head).not.toContain("References");
+  });
+});
+
 describe("header helpers", () => {
   it("keeps an existing Re: prefix", () => {
     expect(replySubject("RE: Budget")).toBe("RE: Budget");
@@ -52,5 +68,12 @@ describe("header helpers", () => {
   it("encodes non-ASCII names and escapes quotes", () => {
     expect(formatAddress({ name: "Jörg", email: "j@x.de" })).toBe("=?UTF-8?B?SsO2cmc=?= <j@x.de>");
     expect(formatAddress({ name: 'Sam "SO" Okafor', email: "s@x.co" })).toBe('"Sam \\"SO\\" Okafor" <s@x.co>');
+  });
+});
+
+describe("formatAddress injection", () => {
+  it("quotes an ASCII name that starts with =? instead of emitting it raw", () => {
+    const header = formatAddress({ name: "=?x <attacker@evil.com>, y", email: "real@x.com" });
+    expect(header).toBe('"=?x <attacker@evil.com>, y" <real@x.com>');
   });
 });
