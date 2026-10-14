@@ -71,6 +71,14 @@ export const ZSendReplyInputSchema = z.object({
   body: z.string().trim().min(1, "Reply can't be empty").max(100_000),
 });
 
+/** Body of POST /api/gmail/messages: a new message that starts its own thread. */
+export const ZComposeRequestSchema = z.object({
+  to: z.array(ZEmailAddressSchema).min(1, "Add at least one recipient").max(50),
+  cc: z.array(ZEmailAddressSchema).max(50).default([]),
+  subject: z.string().trim().max(998).default(""),
+  body: z.string().trim().min(1, "Message can't be empty").max(100_000),
+});
+
 /** Dynamic segment of every /api/gmail/threads/:threadId route. */
 export const ZThreadParamsSchema = z.object({ threadId: ZGmailIdSchema });
 
@@ -120,3 +128,4 @@ export type EmailThread = z.infer<typeof ZEmailThreadSchema>;
 export type ThreadListQuery = z.infer<typeof ZThreadListQuerySchema>;
 export type ThreadListPage = z.infer<typeof ZThreadListPageSchema>;
 export type SendReplyInput = z.infer<typeof ZSendReplyInputSchema>;
+export type ComposeRequest = z.infer<typeof ZComposeRequestSchema>;

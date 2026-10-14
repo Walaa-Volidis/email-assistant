@@ -27,3 +27,12 @@ describe("decodeEncodedWords", () => {
     expect(decodeEncodedWords("=?UTF-8?Q?Caf=C3=A9_menu?=")).toBe("Café menu");
   });
 });
+
+describe("parseAddressList spoofing", () => {
+  it("doesn't let an encoded display name inject another address", () => {
+    const name = Buffer.from('"a" <ceo@corp.com>, "b"').toString("base64");
+    const parsed = parseAddressList(`=?UTF-8?B?${name}?= <attacker@evil.com>`);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]!.email).toBe("attacker@evil.com");
+  });
+});

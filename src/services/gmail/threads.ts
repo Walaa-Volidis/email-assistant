@@ -4,10 +4,11 @@ import { type gmail_v1 } from "@googleapis/gmail";
 
 import { AppError, fromGoogleError } from "@/lib/api/errors";
 import { type GmailContext } from "@/services/gmail/client";
-import { buildReplyMime } from "@/services/gmail/compose";
+import { buildNewMessageMime, buildReplyMime } from "@/services/gmail/compose";
 import { getHeader } from "@/services/gmail/mime";
 import { toEmailThread, toThreadListItem } from "@/services/gmail/normalize";
 import {
+  type ComposeRequest,
   type EmailThread,
   type Mailbox,
   type MailboxCounts,
@@ -49,7 +50,8 @@ const MAILBOX_FILTERS: Record<Mailbox, { labelIds?: string[]; q?: string; includ
   sent: { labelIds: ["SENT"] },
   drafts: { labelIds: ["DRAFT"] },
   // Gmail has no archive label: it's everything outside these.
-  archive: { q: "-in:inbox -in:trash -in:spam -in:drafts" },
+  // -in:sent drops threads made only of the user's own messages.
+  archive: { q: "-in:inbox -in:trash -in:spam -in:drafts -in:sent" },
   trash: { labelIds: ["TRASH"], includeSpamTrash: true },
 };
 
@@ -80,10 +82,16 @@ export async function listThreads(
 
   const ids = (list.threads ?? []).flatMap((t) => (t.id ? [t.id] : []));
   const rows = await mapWithConcurrency(ids, 5, async (id) => {
-    const raw = await google(() =>
-      gmail.users.threads.get({ userId: "me", id, format: "metadata", metadataHeaders: LIST_HEADERS }),
-    );
-    return toThreadListItem(raw);
+    try {
+      const raw = await google(() =>
+        gmail.users.threads.get({ userId: "me", id, format: "metadata", metadataHeaders: LIST_HEADERS }),
+      );
+      return toThreadListItem(raw);
+    } catch (error) {
+      // A thread deleted between list and get shouldn't fail the whole page.
+      if (error instanceof AppError && error.code === "NOT_FOUND") return null;
+      throw error;
+    }
   });
 
   return {
@@ -163,6 +171,14 @@ export async function sendReply(
   const sent = await google(() =>
     gmail.users.messages.send({ userId: "me", requestBody: { raw, threadId } }),
   );
+  if (!sent.id || !sent.threadId) throw new AppError("UPSTREAM_ERROR", "Gmail didn't confirm the message was sent.");
+  return { id: sent.id, threadId: sent.threadId };
+}
+
+/** Sends a new plain-text message, which Gmail files as a new thread. */
+export async function sendMessage({ gmail }: GmailContext, message: ComposeRequest): Promise<SentMessage> {
+  const raw = buildNewMessageMime(message);
+  const sent = await google(() => gmail.users.messages.send({ userId: "me", requestBody: { raw } }));
   if (!sent.id || !sent.threadId) throw new AppError("UPSTREAM_ERROR", "Gmail didn't confirm the message was sent.");
   return { id: sent.id, threadId: sent.threadId };
 }

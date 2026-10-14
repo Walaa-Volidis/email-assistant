@@ -8,14 +8,25 @@ function singleLine(value: string): string {
 /** RFC 2047 B-encoding for header text that isn't plain ASCII. */
 export function encodeHeaderText(value: string): string {
   const clean = singleLine(value);
-  if (/^[\x20-\x7e]*$/.test(clean)) return clean;
-  return `=?UTF-8?B?${Buffer.from(clean, "utf8").toString("base64")}?=`;
+  return isPlainAscii(clean) ? clean : encodeWord(clean);
 }
 
+function isPlainAscii(value: string): boolean {
+  return /^[\x20-\x7e]*$/.test(value);
+}
+
+function encodeWord(value: string): string {
+  return `=?UTF-8?B?${Buffer.from(value, "utf8").toString("base64")}?=`;
+}
+
+/**
+ * ASCII names are always quoted (so commas, "<" or a leading "=?" can't add
+ * recipients); anything else is B-encoded, which can't contain those either.
+ */
 export function formatAddress({ name, email }: EmailAddress): string {
   if (!name) return email;
-  const encoded = encodeHeaderText(name);
-  const display = encoded.startsWith("=?") ? encoded : `"${encoded.replace(/(["\\])/g, "\\$1")}"`;
+  const clean = singleLine(name);
+  const display = isPlainAscii(clean) ? `"${clean.replace(/(["\\])/g, "\\$1")}"` : encodeWord(clean);
   return `${display} <${email}>`;
 }
 
@@ -39,11 +50,20 @@ type ReplyMime = {
  * Builds an RFC 5322 plain-text reply. In-Reply-To and References keep it
  * threaded in every client, not just Gmail. Returns base64url for the API.
  */
-export function buildReplyMime({ to, cc, subject, body, inReplyTo, references }: ReplyMime): string {
+export function buildReplyMime(reply: ReplyMime): string {
+  return buildMessageMime({ ...reply, subject: replySubject(reply.subject) });
+}
+
+/** Builds a plain-text message that starts a new thread. */
+export function buildNewMessageMime(message: Omit<ReplyMime, "inReplyTo" | "references">): string {
+  return buildMessageMime({ ...message, inReplyTo: null, references: null });
+}
+
+function buildMessageMime({ to, cc, subject, body, inReplyTo, references }: ReplyMime): string {
   const headers = [
     `To: ${to.map(formatAddress).join(", ")}`,
     cc.length > 0 ? `Cc: ${cc.map(formatAddress).join(", ")}` : null,
-    `Subject: ${encodeHeaderText(replySubject(subject))}`,
+    `Subject: ${encodeHeaderText(subject)}`,
     inReplyTo ? `In-Reply-To: ${singleLine(inReplyTo)}` : null,
     inReplyTo ? `References: ${singleLine([references, inReplyTo].filter(Boolean).join(" "))}` : null,
     "MIME-Version: 1.0",

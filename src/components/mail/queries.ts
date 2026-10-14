@@ -10,9 +10,11 @@ import {
   type InfiniteData,
   type QueryClient,
 } from "@tanstack/react-query";
+import { useRef } from "react";
+import { toast } from "sonner";
 
-import { apiFetch } from "@/lib/api/client";
-import { applyActionToLabels } from "@/lib/mail";
+import { apiFetch, errorMessage } from "@/lib/api/client";
+import { applyActionToLabels, INVERSE_ACTION } from "@/lib/mail";
 import {
   ZFollowUpSuggestionsSchema,
   ZReplyDraftSchema,
@@ -29,6 +31,7 @@ import {
   ZThreadListPageSchema,
   type EmailThread,
   type Mailbox,
+  type ComposeRequest,
   type ReplyRequest,
   type ThreadAction,
   type ThreadListPage,
@@ -117,34 +120,55 @@ function patchLabels(client: QueryClient, threadId: string, next: (labels: strin
   });
 }
 
+type ThreadActionVariables = { threadId: string; action: ThreadAction; subject: string };
+
 /**
- * Applies the label change to the cache immediately, sends it to Gmail,
- * then adopts Gmail's labels, or restores the snapshot if Gmail refuses.
+ * Applies the label change to the cache immediately and sends it to Gmail.
+ *
+ * Several actions on one thread can overlap (star, then archive), so:
+ * - a failure undoes only its own change (the inverse action), never a
+ *   snapshot that would also wipe later changes;
+ * - Gmail's labels are adopted only from the last action in flight for that
+ *   thread, since an earlier response predates the later changes.
  */
 export function useThreadAction() {
   const client = useQueryClient();
+  const inFlight = useRef(new Map<string, number>());
+
+  const settle = (threadId: string) => {
+    const left = (inFlight.current.get(threadId) ?? 1) - 1;
+    if (left > 0) inFlight.current.set(threadId, left);
+    else inFlight.current.delete(threadId);
+    return left;
+  };
+
   return useMutation({
-    mutationFn: ({ threadId, action }: { threadId: string; action: ThreadAction }) =>
+    mutationFn: ({ threadId, action }: ThreadActionVariables) =>
       apiFetch(`/api/gmail/threads/${threadId}/actions`, ZThreadActionResultSchema, {
         method: "POST",
         body: { action },
       }),
     onMutate: async ({ threadId, action }) => {
+      inFlight.current.set(threadId, (inFlight.current.get(threadId) ?? 0) + 1);
       await client.cancelQueries({ queryKey: mailKeys.lists() });
       await client.cancelQueries({ queryKey: mailKeys.thread(threadId) });
-      const snapshot = {
-        lists: client.getQueriesData<InfiniteData<ThreadListPage>>({ queryKey: mailKeys.lists() }),
-        thread: client.getQueryData<EmailThread>(mailKeys.thread(threadId)),
-      };
       patchLabels(client, threadId, (labels) => applyActionToLabels(labels, action));
-      return snapshot;
     },
-    onError: (_error, { threadId }, snapshot) => {
-      snapshot?.lists.forEach(([key, data]) => client.setQueryData(key, data));
-      if (snapshot?.thread) client.setQueryData(mailKeys.thread(threadId), snapshot.thread);
+    onError: (error, { threadId, action, subject }) => {
+      patchLabels(client, threadId, (labels) => applyActionToLabels(labels, INVERSE_ACTION[action]));
+      // Toast here, not per call: per-call callbacks only fire for the latest mutate().
+      toast.error(errorMessage(error), { description: subject });
+      settle(threadId);
     },
-    onSuccess: ({ id, labelIds }) => patchLabels(client, id, () => labelIds),
-    onSettled: () => client.invalidateQueries({ queryKey: mailKeys.counts() }),
+    onSuccess: ({ id, labelIds }) => {
+      if (settle(id) === 0) patchLabels(client, id, () => labelIds);
+    },
+    onSettled: (_data, _error, { threadId }) => {
+      void client.invalidateQueries({ queryKey: mailKeys.counts() });
+      if (!inFlight.current.has(threadId)) {
+        void client.invalidateQueries({ queryKey: mailKeys.thread(threadId) });
+      }
+    },
   });
 }
 
@@ -160,6 +184,15 @@ export function useSendReply() {
       client.invalidateQueries({ queryKey: mailKeys.thread(threadId) });
       client.invalidateQueries({ queryKey: mailKeys.lists() });
     },
+  });
+}
+
+export function useSendMessage() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (message: ComposeRequest) =>
+      apiFetch("/api/gmail/messages", ZSentMessageSchema, { method: "POST", body: message }),
+    onSuccess: () => client.invalidateQueries({ queryKey: mailKeys.lists() }),
   });
 }
 
