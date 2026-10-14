@@ -8,27 +8,27 @@ import { z } from "zod";
  * lazily on first use and lists every missing variable at once.
  */
 
-const appEnvSchema = z.object({
+const ZAppEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   APP_URL: z.url().default("http://localhost:3000"),
   /** Encrypts the session cookie that holds Gmail OAuth tokens. */
   SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters"),
 });
 
-const googleEnvSchema = z.object({
+const ZGoogleEnvSchema = z.object({
   GOOGLE_CLIENT_ID: z.string().min(1),
   GOOGLE_CLIENT_SECRET: z.string().min(1),
   GOOGLE_REDIRECT_URI: z.url(),
 });
 
-const openAIEnvSchema = z.object({
+const ZOpenAIEnvSchema = z.object({
   OPENAI_API_KEY: z.string().startsWith("sk-", "OPENAI_API_KEY should start with sk-"),
   OPENAI_MODEL: z.string().min(1).default("gpt-5-mini"),
 });
 
-export type AppEnv = z.infer<typeof appEnvSchema>;
-export type GoogleEnv = z.infer<typeof googleEnvSchema>;
-export type OpenAIEnv = z.infer<typeof openAIEnvSchema>;
+export type AppEnv = z.infer<typeof ZAppEnvSchema>;
+export type GoogleEnv = z.infer<typeof ZGoogleEnvSchema>;
+export type OpenAIEnv = z.infer<typeof ZOpenAIEnvSchema>;
 
 function lazyEnv<T extends z.ZodType>(schema: T): () => z.infer<T> {
   let cached: z.infer<T> | undefined;
@@ -43,6 +43,6 @@ function lazyEnv<T extends z.ZodType>(schema: T): () => z.infer<T> {
   };
 }
 
-export const getAppEnv = lazyEnv(appEnvSchema);
-export const getGoogleEnv = lazyEnv(googleEnvSchema);
-export const getOpenAIEnv = lazyEnv(openAIEnvSchema);
+export const getAppEnv = lazyEnv(ZAppEnvSchema);
+export const getGoogleEnv = lazyEnv(ZGoogleEnvSchema);
+export const getOpenAIEnv = lazyEnv(ZOpenAIEnvSchema);

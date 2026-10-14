@@ -1,13 +1,17 @@
-import { ok, parseJsonBody, withErrorHandling } from "@/lib/api/respond";
+import { badRequest } from "@/lib/api/errors";
+import { fail, ok, readJson, withErrorHandling } from "@/lib/api/respond";
 import { suggestFollowUps } from "@/services/ai/assistant";
 import { getGmailContext } from "@/services/gmail/client";
 import { getThread } from "@/services/gmail/threads";
-import { suggestFollowUpsRequestSchema } from "@/schemas/ai";
+import { ZFollowUpSuggestionsSchema, ZSuggestFollowUpsRequestSchema } from "@/schemas/ai";
 
 /** POST /api/ai/follow-ups { threadId, now? } → FollowUpSuggestions */
 export const POST = withErrorHandling(async (request: Request) => {
-  const { threadId, now } = await parseJsonBody(request, suggestFollowUpsRequestSchema);
+  const input = ZSuggestFollowUpsRequestSchema.safeParse(await readJson(request));
+  if (!input.success) return fail(badRequest(input.error));
+
   const context = await getGmailContext();
-  const thread = await getThread(context, threadId);
-  return ok(await suggestFollowUps({ thread, user: context.user, now }));
+  const thread = await getThread(context, input.data.threadId);
+  const followUps = await suggestFollowUps({ thread, user: context.user, now: input.data.now });
+  return ok(ZFollowUpSuggestionsSchema.parse(followUps));
 });

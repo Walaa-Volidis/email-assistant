@@ -27,8 +27,18 @@ export class AppError extends Error {
   }
 }
 
+/** Turns a failed safeParse of request input into a 400 listing each bad field. */
+export function badRequest(error: z.ZodError): AppError {
+  const fieldErrors: Record<string, string[]> = {};
+  for (const issue of error.issues) {
+    const key = issue.path.join(".") || "_root";
+    (fieldErrors[key] ??= []).push(issue.message);
+  }
+  return new AppError("BAD_REQUEST", "Invalid request", fieldErrors);
+}
+
 /** Shape of a Google API (Gaxios) failure, parsed instead of cast. */
-const googleApiErrorSchema = z.object({
+const ZGoogleApiErrorSchema = z.object({
   status: z.number().optional(),
   response: z
     .object({
@@ -44,13 +54,13 @@ const googleApiErrorSchema = z.object({
 
 /** True when Google rejected the refresh token (revoked, expired, password change). */
 export function isInvalidGrant(error: unknown): boolean {
-  const parsed = googleApiErrorSchema.safeParse(error);
+  const parsed = ZGoogleApiErrorSchema.safeParse(error);
   return parsed.success && parsed.data.response?.data?.error === "invalid_grant";
 }
 
 /** Maps a Google API failure onto our error codes. */
 export function fromGoogleError(error: unknown): AppError {
-  const parsed = googleApiErrorSchema.safeParse(error);
+  const parsed = ZGoogleApiErrorSchema.safeParse(error);
   const status = parsed.success ? (parsed.data.response?.status ?? parsed.data.status) : undefined;
 
   switch (status) {

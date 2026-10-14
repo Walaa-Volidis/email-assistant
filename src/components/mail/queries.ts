@@ -14,19 +14,19 @@ import {
 import { apiFetch } from "@/lib/api/client";
 import { applyActionToLabels } from "@/lib/mail";
 import {
-  followUpSuggestionsSchema,
-  replyDraftSchema,
-  threadSummarySchema,
+  ZFollowUpSuggestionsSchema,
+  ZReplyDraftSchema,
+  ZThreadSummarySchema,
   type ReplyDraft,
   type ReplyLength,
   type Tone,
 } from "@/schemas/ai";
 import {
-  emailThreadSchema,
-  mailboxCountsSchema,
-  sentMessageSchema,
-  threadActionResultSchema,
-  threadListPageSchema,
+  ZEmailThreadSchema,
+  ZMailboxCountsSchema,
+  ZSentMessageSchema,
+  ZThreadActionResultSchema,
+  ZThreadListPageSchema,
   type EmailThread,
   type Mailbox,
   type ReplyRequest,
@@ -56,7 +56,7 @@ export function useThreadList(mailbox: Mailbox, q: string) {
       const params = new URLSearchParams({ mailbox });
       if (q) params.set("q", q);
       if (pageParam) params.set("pageToken", pageParam);
-      return apiFetch(`/api/gmail/threads?${params}`, threadListPageSchema, { signal });
+      return apiFetch(`/api/gmail/threads?${params}`, ZThreadListPageSchema, { signal });
     },
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.nextPageToken,
@@ -71,7 +71,7 @@ export function useThread(threadId: string | null) {
   return useQuery({
     queryKey: mailKeys.thread(threadId ?? ""),
     queryFn: threadId
-      ? ({ signal }) => apiFetch(`/api/gmail/threads/${threadId}`, emailThreadSchema, { signal })
+      ? ({ signal }) => apiFetch(`/api/gmail/threads/${threadId}`, ZEmailThreadSchema, { signal })
       : skipToken,
   });
 }
@@ -79,7 +79,7 @@ export function useThread(threadId: string | null) {
 export function useMailboxCounts() {
   return useQuery({
     queryKey: mailKeys.counts(),
-    queryFn: ({ signal }) => apiFetch("/api/gmail/mailboxes", mailboxCountsSchema, { signal }),
+    queryFn: ({ signal }) => apiFetch("/api/gmail/mailboxes", ZMailboxCountsSchema, { signal }),
     refetchInterval: 120_000,
   });
 }
@@ -125,7 +125,7 @@ export function useThreadAction() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ threadId, action }: { threadId: string; action: ThreadAction }) =>
-      apiFetch(`/api/gmail/threads/${threadId}/actions`, threadActionResultSchema, {
+      apiFetch(`/api/gmail/threads/${threadId}/actions`, ZThreadActionResultSchema, {
         method: "POST",
         body: { action },
       }),
@@ -152,7 +152,7 @@ export function useSendReply() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ threadId, ...reply }: ReplyRequest & { threadId: string }) =>
-      apiFetch(`/api/gmail/threads/${threadId}/reply`, sentMessageSchema, {
+      apiFetch(`/api/gmail/threads/${threadId}/reply`, ZSentMessageSchema, {
         method: "POST",
         body: reply,
       }),
@@ -179,7 +179,7 @@ export function useAssistant(threadId: string | null) {
   const summary = useQuery({
     queryKey: aiKeys.summary(id),
     queryFn: ({ signal }) =>
-      apiFetch("/api/ai/summarize", threadSummarySchema, { method: "POST", body: { threadId: id }, signal }),
+      apiFetch("/api/ai/summarize", ZThreadSummarySchema, { method: "POST", body: { threadId: id }, signal }),
     enabled: false,
     staleTime: Infinity,
     retry: false,
@@ -188,7 +188,7 @@ export function useAssistant(threadId: string | null) {
   const followUps = useQuery({
     queryKey: aiKeys.followUps(id),
     queryFn: ({ signal }) =>
-      apiFetch("/api/ai/follow-ups", followUpSuggestionsSchema, {
+      apiFetch("/api/ai/follow-ups", ZFollowUpSuggestionsSchema, {
         method: "POST",
         body: { threadId: id, now: new Date().toISOString() },
         signal,
@@ -206,7 +206,7 @@ export function useAssistant(threadId: string | null) {
   const draftMutation = useMutation({
     mutationKey: aiKeys.draft(id),
     mutationFn: (options: { tone: Tone; length: ReplyLength; instructions: string }) =>
-      apiFetch("/api/ai/draft", replyDraftSchema, {
+      apiFetch("/api/ai/draft", ZReplyDraftSchema, {
         method: "POST",
         body: {
           threadId: id,

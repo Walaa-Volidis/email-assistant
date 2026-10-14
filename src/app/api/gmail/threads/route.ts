@@ -1,13 +1,15 @@
-import { type NextRequest } from "next/server";
-
-import { ok, parseOrThrow, withErrorHandling } from "@/lib/api/respond";
+import { badRequest } from "@/lib/api/errors";
+import { fail, ok, readQuery, withErrorHandling } from "@/lib/api/respond";
 import { getGmailContext } from "@/services/gmail/client";
 import { listThreads } from "@/services/gmail/threads";
-import { threadListQuerySchema } from "@/schemas/email";
+import { ZThreadListPageSchema, ZThreadListQuerySchema } from "@/schemas/email";
 
 /** GET /api/gmail/threads?mailbox=inbox&q=&pageToken=&pageSize= → ThreadListPage */
-export const GET = withErrorHandling(async (request: NextRequest) => {
-  const query = parseOrThrow(threadListQuerySchema, Object.fromEntries(request.nextUrl.searchParams));
+export const GET = withErrorHandling(async (request: Request) => {
+  const input = ZThreadListQuerySchema.safeParse(readQuery(request));
+  if (!input.success) return fail(badRequest(input.error));
+
   const context = await getGmailContext();
-  return ok(await listThreads(context, query));
+  const page = await listThreads(context, input.data);
+  return ok(ZThreadListPageSchema.parse(page));
 });

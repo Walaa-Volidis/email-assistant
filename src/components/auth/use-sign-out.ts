@@ -3,11 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useTransition } from "react";
 import { toast } from "sonner";
-import { z } from "zod";
 
-import { apiResponseSchema } from "@/schemas/api";
+import { ZApiResponseSchema } from "@/schemas/api";
+import { ZSignOutResponseSchema } from "@/schemas/auth";
 
-const logoutResponseSchema = apiResponseSchema(z.object({ signedOut: z.literal(true) }));
+const ZLogoutResponseSchema = ZApiResponseSchema(ZSignOutResponseSchema);
 
 export function useSignOut() {
   const router = useRouter();
@@ -16,7 +16,7 @@ export function useSignOut() {
   const signOut = useCallback(() => {
     startTransition(async () => {
       const response = await fetch("/api/auth/logout", { method: "POST" });
-      const body = logoutResponseSchema.safeParse(await response.json());
+      const body = ZLogoutResponseSchema.safeParse(await response.json());
       if (!body.success || !body.data.ok) {
         toast.error("Couldn't sign out. Try again.");
         return;

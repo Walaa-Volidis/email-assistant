@@ -1,12 +1,14 @@
 import { ok, withErrorHandling } from "@/lib/api/respond";
 import { readSession } from "@/lib/auth/session";
-import { type SessionResponse } from "@/schemas/auth";
+import { ZSessionResponseSchema } from "@/schemas/auth";
 
-/** GET /api/auth/session — who is signed in. Never exposes tokens. */
+/** GET /api/auth/session → SessionResponse (no input). Never exposes tokens. */
 export const GET = withErrorHandling(async () => {
   const session = await readSession();
-  const body: SessionResponse = session
-    ? { authenticated: true, user: session.user }
-    : { authenticated: false };
-  return ok(body);
+  // Parsing strips anything not in the schema, so tokens can't leak by accident.
+  return ok(
+    ZSessionResponseSchema.parse(
+      session ? { authenticated: true, user: session.user } : { authenticated: false },
+    ),
+  );
 });

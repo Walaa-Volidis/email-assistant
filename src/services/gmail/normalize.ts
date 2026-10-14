@@ -9,8 +9,8 @@ import {
   htmlToText,
 } from "@/services/gmail/mime";
 import {
-  emailThreadSchema,
-  threadListItemSchema,
+  ZEmailThreadSchema,
+  ZThreadListItemSchema,
   type EmailMessage,
   type EmailThread,
   type ThreadListItem,
@@ -63,7 +63,7 @@ export function toThreadListItem(raw: gmail_v1.Schema$Thread): ThreadListItem | 
   if (!raw.id || !first || !last) return null;
 
   const labelIds = [...new Set(messages.flatMap((m) => m.labelIds))];
-  return threadListItemSchema.parse({
+  return ZThreadListItemSchema.parse({
     id: raw.id,
     subject: first.subject,
     snippet: last.snippet,
@@ -92,7 +92,7 @@ export function toEmailThread(raw: gmail_v1.Schema$Thread): EmailThread | null {
   const participants = [...new Map(messages.map((m) => [m.from.email, m.from])).values()];
 
   // Parse rather than trust: Gmail data is external input.
-  return emailThreadSchema.parse({
+  return ZEmailThreadSchema.parse({
     id: raw.id,
     subject: first.subject,
     snippet: last.snippet,
