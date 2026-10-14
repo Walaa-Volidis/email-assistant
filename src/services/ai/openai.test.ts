@@ -2,7 +2,7 @@ import type * as OpenAIModule from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { followUpSuggestionsSchema, replyDraftSchema, threadSummarySchema } from "@/schemas/ai";
+import { ZFollowUpSuggestionsSchema, ZReplyDraftSchema, ZThreadSummarySchema } from "@/schemas/ai";
 
 const parseMock = vi.fn();
 
@@ -44,9 +44,9 @@ function assertStrict(schema: JsonSchema, path = "$"): void {
 
 describe("AI output schemas", () => {
   it.each([
-    ["thread_summary", threadSummarySchema],
-    ["reply_draft", replyDraftSchema],
-    ["follow_up_suggestions", followUpSuggestionsSchema],
+    ["thread_summary", ZThreadSummarySchema],
+    ["reply_draft", ZReplyDraftSchema],
+    ["follow_up_suggestions", ZFollowUpSuggestionsSchema],
   ] as const)("%s converts to a strict JSON schema", (name, schema) => {
     const format = zodTextFormat(schema, name);
     expect(format.strict).toBe(true);
@@ -66,7 +66,7 @@ const summary = {
 
 const request = {
   name: "thread_summary",
-  schema: threadSummarySchema,
+  schema: ZThreadSummarySchema,
   instructions: "x",
   input: "<thread/>",
   userId: "user-1",

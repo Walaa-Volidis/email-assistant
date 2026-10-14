@@ -13,8 +13,8 @@ import { errorMessage } from "@/lib/api/client";
 import { formatRelativeDays } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
-  replyLengthSchema,
-  toneSchema,
+  ZReplyLengthSchema,
+  ZToneSchema,
   type FollowUpSuggestions,
   type ReplyDraft,
   type ReplyLength,
@@ -23,8 +23,8 @@ import {
   type Tone,
 } from "@/schemas/ai";
 
-const assistantTabSchema = z.enum(["brief", "reply", "follow-ups"]);
-export type AssistantTab = z.infer<typeof assistantTabSchema>;
+const ZAssistantTabSchema = z.enum(["brief", "reply", "follow-ups"]);
+export type AssistantTab = z.infer<typeof ZAssistantTabSchema>;
 export type AssistantRequest =
   | { kind: "summarize" }
   | { kind: "draft"; tone: Tone; length: ReplyLength; instructions: string }
@@ -64,7 +64,7 @@ export function AssistantPanel({
       <Tabs
         value={tab}
         onValueChange={(value) => {
-          const parsed = assistantTabSchema.safeParse(value);
+          const parsed = ZAssistantTabSchema.safeParse(value);
           if (parsed.success) onTabChange(parsed.data);
         }}
         className="flex min-h-0 flex-1 flex-col gap-0"
@@ -296,8 +296,8 @@ function ReplyView({
 
   return (
     <div className="space-y-4">
-      <Segmented label="Tone" options={toneSchema.options} value={tone} onChange={setTone} />
-      <Segmented label="Length" options={replyLengthSchema.options} value={length} onChange={setLength} />
+      <Segmented label="Tone" options={ZToneSchema.options} value={tone} onChange={setTone} />
+      <Segmented label="Length" options={ZReplyLengthSchema.options} value={length} onChange={setLength} />
       <label className="block">
         <span className="mb-1.5 block font-mono text-[0.65rem] uppercase tracking-wider text-muted-foreground">
           Steer (optional)

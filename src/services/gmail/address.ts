@@ -1,4 +1,4 @@
-import { emailAddressSchema, type EmailAddress } from "@/schemas/common";
+import { ZEmailAddressSchema, type EmailAddress } from "@/schemas/common";
 
 /** Decodes RFC 2047 encoded-words (=?UTF-8?B?…?= / =?UTF-8?Q?…?=) in a header value. */
 export function decodeEncodedWords(value: string): string {
@@ -56,7 +56,7 @@ export function parseAddressList(header: string | null | undefined): EmailAddres
     const angled = entry.match(/^(.*?)<([^>]+)>\s*$/);
     const rawName = angled ? angled[1]!.trim().replace(/^"(.*)"$/, "$1").trim() : "";
     const email = (angled ? angled[2]! : entry).trim().toLowerCase();
-    const parsed = emailAddressSchema.safeParse({ name: rawName || null, email });
+    const parsed = ZEmailAddressSchema.safeParse({ name: rawName || null, email });
     return parsed.success ? [parsed.data] : [];
   });
 }

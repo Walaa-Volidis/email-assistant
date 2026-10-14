@@ -12,8 +12,8 @@ import {
 } from "@/lib/auth/constants";
 import { getAppEnv } from "@/lib/env";
 import {
-  oauthStateSchema,
-  sessionDataSchema,
+  ZOauthStateSchema,
+  ZSessionDataSchema,
   type OAuthState,
   type SessionData,
 } from "@/schemas/auth";
@@ -45,7 +45,7 @@ async function sessionStore(): Promise<IronSession<Partial<SessionData>>> {
 export async function readSession(): Promise<SessionData | null> {
   // Unsealing checks the TTL against Date.now(); pin this to request time.
   await connection();
-  const parsed = sessionDataSchema.safeParse({ ...(await sessionStore()) });
+  const parsed = ZSessionDataSchema.safeParse({ ...(await sessionStore()) });
   return parsed.success ? parsed.data : null;
 }
 
@@ -79,7 +79,7 @@ export async function writeOAuthState(data: OAuthState): Promise<void> {
 /** Reads and deletes the state cookie: each login attempt is single-use. */
 export async function consumeOAuthState(): Promise<OAuthState | null> {
   const store = await oauthStateStore();
-  const parsed = oauthStateSchema.safeParse({ ...store });
+  const parsed = ZOauthStateSchema.safeParse({ ...store });
   store.destroy();
   return parsed.success ? parsed.data : null;
 }

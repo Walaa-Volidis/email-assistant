@@ -2,9 +2,10 @@ import { timingSafeEqual } from "node:crypto";
 
 import { NextResponse, type NextRequest } from "next/server";
 
+import { readQuery } from "@/lib/api/respond";
 import { exchangeCode, OAuthCallbackError } from "@/lib/auth/google-oauth";
 import { consumeOAuthState, writeSession } from "@/lib/auth/session";
-import { oauthCallbackQuerySchema, type AuthErrorReason } from "@/schemas/auth";
+import { ZOauthCallbackQuerySchema, type AuthErrorReason } from "@/schemas/auth";
 
 function safeEqual(a: string, b: string): boolean {
   const left = Buffer.from(a);
@@ -20,9 +21,7 @@ function toLogin(request: NextRequest, reason: AuthErrorReason) {
 
 /** GET /api/auth/google/callback — Google redirects here after consent. */
 export async function GET(request: NextRequest) {
-  const query = oauthCallbackQuerySchema.safeParse(
-    Object.fromEntries(request.nextUrl.searchParams),
-  );
+  const query = ZOauthCallbackQuerySchema.safeParse(readQuery(request));
   const pending = await consumeOAuthState();
 
   if (!query.success) return toLogin(request, "unknown");

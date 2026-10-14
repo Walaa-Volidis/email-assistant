@@ -7,7 +7,7 @@ import { CodeChallengeMethod, OAuth2Client } from "google-auth-library";
 import { GMAIL_SCOPE, OAUTH_SCOPES } from "@/lib/auth/constants";
 import { getGoogleEnv } from "@/lib/env";
 import {
-  googleIdTokenClaimsSchema,
+  ZGoogleIdTokenClaimsSchema,
   type AuthErrorReason,
   type SessionData,
 } from "@/schemas/auth";
@@ -68,7 +68,7 @@ export async function exchangeCode(code: string, codeVerifier: string): Promise<
     idToken: tokens.id_token,
     audience: getGoogleEnv().GOOGLE_CLIENT_ID,
   });
-  const claims = googleIdTokenClaimsSchema.safeParse(ticket.getPayload());
+  const claims = ZGoogleIdTokenClaimsSchema.safeParse(ticket.getPayload());
   if (!claims.success) throw new OAuthCallbackError("unknown");
   if (!claims.data.email_verified) throw new OAuthCallbackError("unverified_email");
 

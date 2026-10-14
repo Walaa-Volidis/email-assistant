@@ -1,8 +1,8 @@
 import { z } from "zod";
 
-import { followUpSuggestionsSchema, replyDraftSchema, threadSummarySchema } from "@/schemas/ai";
-import { gmailIdSchema } from "@/schemas/common";
-import { emailThreadSchema, type EmailMessage, type EmailThread } from "@/schemas/email";
+import { ZFollowUpSuggestionsSchema, ZReplyDraftSchema, ZThreadSummarySchema } from "@/schemas/ai";
+import { ZGmailIdSchema } from "@/schemas/common";
+import { ZEmailThreadSchema, type EmailMessage, type EmailThread } from "@/schemas/email";
 
 /*
  * Sample mailbox for tests (the UI reads real Gmail data). Parsed through
@@ -271,21 +271,21 @@ Alex`,
   ]),
 ];
 
-export const sampleThreads = z.array(emailThreadSchema).parse(rawThreads);
+export const sampleThreads = z.array(ZEmailThreadSchema).parse(rawThreads);
 
-const aiSampleSchema = z.record(
-  gmailIdSchema,
+const ZAiSampleSchema = z.record(
+  ZGmailIdSchema,
   z.object({
-    summary: threadSummarySchema.optional(),
-    draft: replyDraftSchema.optional(),
-    followUps: followUpSuggestionsSchema.optional(),
+    summary: ZThreadSummarySchema.optional(),
+    draft: ZReplyDraftSchema.optional(),
+    followUps: ZFollowUpSuggestionsSchema.optional(),
   }),
 );
 
-export type AiSamples = z.infer<typeof aiSampleSchema>;
+export type AiSamples = z.infer<typeof ZAiSampleSchema>;
 
 /** Example assistant output, shaped exactly like the structured responses from Step 4. */
-export const sampleAiOutputs: AiSamples = aiSampleSchema.parse({
+export const sampleAiOutputs: AiSamples = ZAiSampleSchema.parse({
   "18f2a01": {
     summary: {
       tldr: "Acme wants to move to the Growth tier but needs the overage rate in writing and a signed order form by Oct 24 to make their fiscal year.",

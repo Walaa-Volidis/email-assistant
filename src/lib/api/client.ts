@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { apiResponseSchema, type ApiErrorCode } from "@/schemas/api";
+import { ZApiResponseSchema, type ApiErrorCode } from "@/schemas/api";
 
 /** A failed API call, carrying the server's error code and user-facing message. */
 export class ApiClientError extends Error {
@@ -47,7 +47,7 @@ export async function apiFetch<T extends z.ZodType>(
 
   // Envelope first, then the payload, so each step narrows cleanly.
   const json: unknown = await response.json().catch(() => null);
-  const envelope = apiResponseSchema(z.unknown()).safeParse(json);
+  const envelope = ZApiResponseSchema(z.unknown()).safeParse(json);
   if (!envelope.success) throw unexpected;
   if (!envelope.data.ok) {
     throw new ApiClientError(envelope.data.error.code, envelope.data.error.message, response.status);

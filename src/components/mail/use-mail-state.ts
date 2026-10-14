@@ -3,8 +3,8 @@
 import { useSearchParams } from "next/navigation";
 import { useCallback } from "react";
 
-import { gmailIdSchema } from "@/schemas/common";
-import { mailboxSchema, type Mailbox } from "@/schemas/email";
+import { ZGmailIdSchema } from "@/schemas/common";
+import { ZMailboxSchema, type Mailbox } from "@/schemas/email";
 
 /**
  * Mailbox and open thread live in the URL (`?box=sent&t=18f2a01`), so a
@@ -14,8 +14,8 @@ import { mailboxSchema, type Mailbox } from "@/schemas/email";
  */
 export function useMailRoute() {
   const params = useSearchParams();
-  const mailbox: Mailbox = mailboxSchema.catch("inbox").parse(params.get("box") ?? undefined);
-  const parsedId = gmailIdSchema.safeParse(params.get("t"));
+  const mailbox: Mailbox = ZMailboxSchema.catch("inbox").parse(params.get("box") ?? undefined);
+  const parsedId = ZGmailIdSchema.safeParse(params.get("t"));
   const threadId = parsedId.success ? parsedId.data : null;
 
   const navigate = useCallback((next: { box?: Mailbox; t?: string | null }) => {

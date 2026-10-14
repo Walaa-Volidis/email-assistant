@@ -1,4 +1,4 @@
-import { authErrorReasonSchema, type AuthErrorReason } from "@/schemas/auth";
+import { ZAuthErrorReasonSchema, type AuthErrorReason } from "@/schemas/auth";
 
 const MESSAGES: Record<AuthErrorReason, string> = {
   access_denied: "Sign-in was cancelled.",
@@ -18,7 +18,7 @@ export async function LoginError({
   const { error } = await searchParams;
   if (error === undefined) return null;
 
-  const reason = authErrorReasonSchema.catch("unknown").parse(error);
+  const reason = ZAuthErrorReasonSchema.catch("unknown").parse(error);
   return (
     <p
       role="alert"

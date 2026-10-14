@@ -2,10 +2,16 @@ import "server-only";
 
 import { unstable_rethrow } from "next/navigation";
 import { NextResponse } from "next/server";
-import { type z } from "zod";
 
 import { AppError } from "@/lib/api/errors";
 import { type ApiResponse } from "@/schemas/api";
+
+/*
+ * Route convention: every handler validates its own input with
+ * `ZSomethingSchema.safeParse(...)` (returning `fail(badRequest(error))` on
+ * failure) and its output with `ZSomethingSchema.parse(...)` before `ok()`.
+ * An output that fails to parse is our bug, so it surfaces as a 500 here.
+ */
 
 export function ok<T>(data: T, init?: ResponseInit): NextResponse<ApiResponse<T>> {
   return NextResponse.json({ ok: true, data }, init);
@@ -21,37 +27,20 @@ export function fail(error: AppError): NextResponse<ApiResponse<never>> {
   );
 }
 
-/** Parses input or throws a BAD_REQUEST AppError carrying per-field messages. */
-export function parseOrThrow<T extends z.ZodType>(schema: T, input: unknown): z.infer<T> {
-  const result = schema.safeParse(input);
-  if (!result.success) {
-    const fieldErrors: Record<string, string[]> = {};
-    for (const issue of result.error.issues) {
-      const key = issue.path.join(".") || "_root";
-      (fieldErrors[key] ??= []).push(issue.message);
-    }
-    throw new AppError("BAD_REQUEST", "Invalid request", fieldErrors);
-  }
-  return result.data;
+/** The request body as unknown JSON, or null if it isn't JSON; Zod decides what's valid. */
+export async function readJson(request: Request): Promise<unknown> {
+  return request.json().catch(() => null);
 }
 
-/** Reads a JSON body and validates it; malformed JSON is a BAD_REQUEST too. */
-export async function parseJsonBody<T extends z.ZodType>(
-  request: Request,
-  schema: T,
-): Promise<z.infer<T>> {
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    throw new AppError("BAD_REQUEST", "Request body must be valid JSON");
-  }
-  return parseOrThrow(schema, body);
+/** Query string as a plain object, ready for a Zod schema. */
+export function readQuery(request: Request): Record<string, string> {
+  return Object.fromEntries(new URL(request.url).searchParams);
 }
 
 /**
  * Wraps a route handler so every failure leaves as the standard envelope.
- * Unknown errors are logged and reported as INTERNAL without leaking detail.
+ * Unknown errors (including a ZodError from an output parse) are logged and
+ * reported as INTERNAL without leaking detail.
  */
 export function withErrorHandling<Args extends unknown[]>(
   handler: (...args: Args) => Promise<Response>,
