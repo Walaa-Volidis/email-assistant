@@ -8,7 +8,13 @@ import {
   getHeader,
   htmlToText,
 } from "@/services/gmail/mime";
-import { emailThreadSchema, type EmailMessage, type EmailThread } from "@/schemas/email";
+import {
+  emailThreadSchema,
+  threadListItemSchema,
+  type EmailMessage,
+  type EmailThread,
+  type ThreadListItem,
+} from "@/schemas/email";
 
 const UNKNOWN_SENDER = { name: "Unknown sender", email: "unknown@invalid.example" };
 
@@ -38,6 +44,37 @@ export function toEmailMessage(raw: gmail_v1.Schema$Message): EmailMessage | nul
     isUnread: labelIds.includes("UNREAD"),
     attachments: extractAttachments(payload),
   };
+}
+
+/**
+ * Builds a list row from `threads.get` in metadata format (headers only, no
+ * bodies). Attachments aren't listed in that format; a multipart/mixed
+ * top-level part is the standard signal that a message carries files.
+ */
+export function toThreadListItem(raw: gmail_v1.Schema$Thread): ThreadListItem | null {
+  const rawMessages = raw.messages ?? [];
+  const messages = rawMessages
+    .map(toEmailMessage)
+    .filter((m): m is EmailMessage => m !== null)
+    .sort((a, b) => a.sentAt.localeCompare(b.sentAt));
+
+  const first = messages[0];
+  const last = messages.at(-1);
+  if (!raw.id || !first || !last) return null;
+
+  const labelIds = [...new Set(messages.flatMap((m) => m.labelIds))];
+  return threadListItemSchema.parse({
+    id: raw.id,
+    subject: first.subject,
+    snippet: last.snippet,
+    participants: [...new Map(messages.map((m) => [m.from.email, m.from])).values()],
+    messageCount: messages.length,
+    lastMessageAt: last.sentAt,
+    isUnread: messages.some((m) => m.isUnread),
+    isStarred: labelIds.includes("STARRED"),
+    hasAttachments: rawMessages.some((m) => m.payload?.mimeType === "multipart/mixed"),
+    labelIds,
+  });
 }
 
 /** Builds a thread from Gmail's `threads.get` response and validates it. */

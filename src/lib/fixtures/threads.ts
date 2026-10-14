@@ -5,9 +5,9 @@ import { gmailIdSchema } from "@/schemas/common";
 import { emailThreadSchema, type EmailMessage, type EmailThread } from "@/schemas/email";
 
 /*
- * Sample mailbox used to build the workspace before Gmail and OpenAI are
- * wired in (Step 5). Parsed through the real schemas at import time, so the
- * fixtures can't drift from the shapes the API will return.
+ * Sample mailbox for tests (the UI reads real Gmail data). Parsed through
+ * the real schemas at import time, so fixtures can't drift from the shapes
+ * the API returns.
  */
 
 export const FIXTURE_OWNER = { name: "Alex Rivera", email: "alex@northwind.io" } as const;

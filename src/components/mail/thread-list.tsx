@@ -1,18 +1,28 @@
 "use client";
 
-import { PaperclipIcon, SearchIcon, StarIcon, XIcon } from "lucide-react";
+import { LoaderIcon, PaperclipIcon, SearchIcon, StarIcon, XIcon } from "lucide-react";
 import { forwardRef, useEffect, useRef } from "react";
 
+import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatListTime } from "@/lib/format";
 import { displayName, firstName, mailboxMeta } from "@/lib/mail";
 import { cn } from "@/lib/utils";
-import { type EmailThread, type Mailbox } from "@/schemas/email";
+import { type Mailbox, type ThreadListItem } from "@/schemas/email";
 
 type ThreadListProps = {
   mailbox: Mailbox;
-  threads: EmailThread[];
+  threads: ThreadListItem[];
+  status: "pending" | "error" | "success";
+  error: string | null;
+  /** A refresh or search is running while older results stay visible. */
+  refreshing: boolean;
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
+  onRetry: () => void;
   selectedId: string | null;
   query: string;
   onQueryChange: (query: string) => void;
@@ -21,26 +31,62 @@ type ThreadListProps = {
 };
 
 export const ThreadList = forwardRef<HTMLInputElement, ThreadListProps>(function ThreadList(
-  { mailbox, threads, selectedId, query, onQueryChange, onSelect, selfEmails },
+  {
+    mailbox,
+    threads,
+    status,
+    error,
+    refreshing,
+    hasMore,
+    loadingMore,
+    onLoadMore,
+    onRetry,
+    selectedId,
+    query,
+    onQueryChange,
+    onSelect,
+    selfEmails,
+  },
   searchRef,
 ) {
   const meta = mailboxMeta(mailbox);
   const unread = threads.filter((t) => t.isUnread).length;
   const selectedRef = useRef<HTMLButtonElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   // Keep the keyboard selection in view during j/k navigation.
   useEffect(() => {
     selectedRef.current?.scrollIntoView({ block: "nearest" });
   }, [selectedId]);
 
+  // Load the next page when the end of the list scrolls into view.
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || !hasMore) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting) && !loadingMore) onLoadMore();
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, onLoadMore]);
+
   return (
     <section aria-label={meta.label} className="flex h-full min-w-0 flex-col">
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-4">
         <h2 className="text-sm font-medium">{meta.label}</h2>
-        <span className="tabular font-mono text-[0.7rem] text-muted-foreground">
-          {threads.length}
-          {unread > 0 && ` · ${unread} unread`}
-        </span>
+        {status === "success" && (
+          <span className="tabular font-mono text-[0.7rem] text-muted-foreground">
+            {threads.length}
+            {hasMore && "+"}
+            {unread > 0 && ` · ${unread} unread`}
+          </span>
+        )}
+        {refreshing && (
+          <LoaderIcon aria-label="Updating" className="ml-auto size-3.5 animate-spin text-muted-foreground" />
+        )}
       </header>
 
       <div className="border-b border-hairline px-3 py-2">
@@ -76,33 +122,61 @@ export const ThreadList = forwardRef<HTMLInputElement, ThreadListProps>(function
       </div>
 
       <ScrollArea className="min-h-0 flex-1">
-        {threads.length === 0 ? (
+        {status === "pending" ? (
+          <ListSkeleton />
+        ) : status === "error" ? (
+          <div className="space-y-3 px-4 py-10 text-center">
+            <p className="text-[0.8rem] text-muted-foreground">{error ?? "Couldn't load threads."}</p>
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              Try again
+            </Button>
+          </div>
+        ) : threads.length === 0 ? (
           <EmptyList mailbox={mailbox} searching={query.length > 0} />
         ) : (
-          <ul role="listbox" aria-label={`${meta.label} threads`} className="pb-6">
-            {threads.map((thread) => {
-              const selected = thread.id === selectedId;
-              return (
-                <li key={thread.id} role="option" aria-selected={selected}>
-                  <ThreadRow
-                    ref={selected ? selectedRef : undefined}
-                    thread={thread}
-                    selected={selected}
-                    onSelect={onSelect}
-                    selfEmails={selfEmails}
-                  />
-                </li>
-              );
-            })}
-          </ul>
+          <>
+            <ul role="listbox" aria-label={`${meta.label} threads`}>
+              {threads.map((thread) => {
+                const selected = thread.id === selectedId;
+                return (
+                  <li key={thread.id} role="option" aria-selected={selected}>
+                    <ThreadRow
+                      ref={selected ? selectedRef : undefined}
+                      thread={thread}
+                      selected={selected}
+                      onSelect={onSelect}
+                      selfEmails={selfEmails}
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+            <div ref={sentinelRef} className="pb-6">
+              {loadingMore && <ListSkeleton rows={2} />}
+            </div>
+          </>
         )}
       </ScrollArea>
     </section>
   );
 });
 
+function ListSkeleton({ rows = 8 }: { rows?: number }) {
+  return (
+    <div aria-busy="true" aria-label="Loading threads">
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="space-y-1.5 border-b border-hairline px-4 py-3">
+          <Skeleton className="h-3 w-1/3" />
+          <Skeleton className="h-3 w-3/4" />
+          <Skeleton className="h-3 w-2/3" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 type ThreadRowProps = {
-  thread: EmailThread;
+  thread: ThreadListItem;
   selected: boolean;
   onSelect: (id: string) => void;
   selfEmails: ReadonlySet<string>;
@@ -186,7 +260,7 @@ const ThreadRow = forwardRef<HTMLButtonElement, ThreadRowProps>(function ThreadR
 
 function EmptyList({ mailbox, searching }: { mailbox: Mailbox; searching: boolean }) {
   const message = searching
-    ? "No threads match. Try fewer words or clear the search."
+    ? "No threads match. Try fewer words, or Gmail operators like from: or has:attachment."
     : mailbox === "inbox"
       ? "Inbox zero. New mail will show up here."
       : `Nothing in ${mailboxMeta(mailbox).label.toLowerCase()}.`;

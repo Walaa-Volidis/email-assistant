@@ -96,6 +96,14 @@ export async function generateStructured<T extends z.ZodType>({
 
 export function fromOpenAIError(error: unknown): AppError {
   if (error instanceof AppError) return error;
+  // OpenAI reports an empty balance as a 429, but waiting won't fix it.
+  if (
+    error instanceof RateLimitError &&
+    (error.code === "insufficient_quota" || error.code === "credit_balance_exhausted")
+  ) {
+    console.error("[ai] OpenAI account has no credits", error.code);
+    return new AppError("INTERNAL", "The assistant's OpenAI account is out of credits.");
+  }
   if (error instanceof RateLimitError) {
     return new AppError("RATE_LIMITED", "The assistant is busy right now. Try again in a moment.");
   }

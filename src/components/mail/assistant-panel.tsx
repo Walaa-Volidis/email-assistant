@@ -1,14 +1,15 @@
 "use client";
 
-import { CornerDownLeftIcon, XIcon } from "lucide-react";
+import { CornerDownLeftIcon, RotateCcwIcon, XIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { z } from "zod";
 
-import { Badge } from "@/components/ui/badge";
+import { type AsyncResult } from "@/components/mail/queries";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { type AiSamples } from "@/lib/fixtures/threads";
+import { errorMessage } from "@/lib/api/client";
 import { formatRelativeDays } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
@@ -21,7 +22,6 @@ import {
   type ThreadSummary,
   type Tone,
 } from "@/schemas/ai";
-import { type EmailThread } from "@/schemas/email";
 
 const assistantTabSchema = z.enum(["brief", "reply", "follow-ups"]);
 export type AssistantTab = z.infer<typeof assistantTabSchema>;
@@ -31,8 +31,10 @@ export type AssistantRequest =
   | { kind: "follow-ups" };
 
 type AssistantPanelProps = {
-  thread: EmailThread;
-  sample: AiSamples[string] | undefined;
+  messageCount: number;
+  summary: AsyncResult<ThreadSummary>;
+  draft: AsyncResult<ReplyDraft>;
+  followUps: AsyncResult<FollowUpSuggestions>;
   tab: AssistantTab;
   onTabChange: (tab: AssistantTab) => void;
   onRequest: (request: AssistantRequest) => void;
@@ -45,14 +47,18 @@ type AssistantPanelProps = {
  * mono labels in a gutter, the substance beside them, no chat bubbles.
  */
 export function AssistantPanel({
-  thread,
-  sample,
+  messageCount,
+  summary,
+  draft,
+  followUps,
   tab,
   onTabChange,
   onRequest,
   onInsert,
   onClose,
 }: AssistantPanelProps) {
+  const summarize = () => onRequest({ kind: "summarize" });
+  const suggest = () => onRequest({ kind: "follow-ups" });
   return (
     <aside aria-label="Assistant" className="flex h-full min-w-0 flex-col bg-subtle">
       <Tabs
@@ -70,11 +76,6 @@ export function AssistantPanel({
             <TabsTrigger value="follow-ups" className="text-[0.8rem]">Follow-ups</TabsTrigger>
           </TabsList>
           <div className="flex-1" />
-          {sample && (
-            <Badge variant="outline" className="font-mono text-[0.6rem] font-normal uppercase tracking-wider">
-              Sample
-            </Badge>
-          )}
           <Button variant="ghost" size="icon-xs" aria-label="Hide assistant" onClick={onClose}>
             <XIcon />
           </Button>
@@ -82,29 +83,43 @@ export function AssistantPanel({
 
         <ScrollArea className="min-h-0 flex-1">
           <TabsContent value="brief" className="p-4">
-            {sample?.summary ? (
-              <BriefView summary={sample.summary} />
+            {summary.pending ? (
+              <Working label={`Reading ${messageCount === 1 ? "the message" : `${messageCount} messages`}…`} />
+            ) : summary.error ? (
+              <Failed error={summary.error} onRetry={summarize} />
+            ) : summary.data ? (
+              <>
+                <BriefView summary={summary.data} />
+                <RunAgain label="Summarize again" onClick={summarize} />
+              </>
             ) : (
               <Idle
-                body={`Condense ${thread.messageCount === 1 ? "this message" : `all ${thread.messageCount} messages`} into what you need to know, what's being asked, and who owes what.`}
+                body={`Condense ${messageCount === 1 ? "this message" : `all ${messageCount} messages`} into what you need to know, what's being asked, and who owes what.`}
                 action="Summarize thread"
-                onAction={() => onRequest({ kind: "summarize" })}
+                onAction={summarize}
               />
             )}
           </TabsContent>
 
           <TabsContent value="reply" className="p-4">
-            <ReplyView draft={sample?.draft} onRequest={onRequest} onInsert={onInsert} />
+            <ReplyView draft={draft} onRequest={onRequest} onInsert={onInsert} />
           </TabsContent>
 
           <TabsContent value="follow-ups" className="p-4">
-            {sample?.followUps ? (
-              <FollowUpsView followUps={sample.followUps} onInsert={onInsert} />
+            {followUps.pending ? (
+              <Working label="Looking for loose ends…" />
+            ) : followUps.error ? (
+              <Failed error={followUps.error} onRetry={suggest} />
+            ) : followUps.data ? (
+              <>
+                <FollowUpsView followUps={followUps.data} onInsert={onInsert} />
+                <RunAgain label="Check again" onClick={suggest} />
+              </>
             ) : (
               <Idle
                 body="Find loose ends in this thread: unanswered asks, promised updates, and when to nudge."
                 action="Suggest follow-ups"
-                onAction={() => onRequest({ kind: "follow-ups" })}
+                onAction={suggest}
               />
             )}
           </TabsContent>
@@ -122,6 +137,39 @@ function Idle({ body, action, onAction }: { body: string; action: string; onActi
         {action}
       </Button>
     </div>
+  );
+}
+
+function Working({ label }: { label: string }) {
+  return (
+    <div aria-busy="true" className="space-y-3 py-1">
+      <p className="font-mono text-[0.65rem] uppercase tracking-wider text-muted-foreground">{label}</p>
+      {[0.95, 0.8, 0.88, 0.6].map((width, i) => (
+        <Skeleton key={i} className="h-3" style={{ width: `${width * 100}%` }} />
+      ))}
+    </div>
+  );
+}
+
+function Failed({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  return (
+    <div role="alert" className="space-y-3 py-1">
+      <p className="border-l-2 border-destructive pl-3 text-[0.8rem] leading-relaxed text-destructive">
+        {errorMessage(error)}
+      </p>
+      <Button variant="outline" size="sm" className="bg-background" onClick={onRetry}>
+        Try again
+      </Button>
+    </div>
+  );
+}
+
+function RunAgain({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <Button variant="ghost" size="xs" className="mt-3 text-muted-foreground" onClick={onClick}>
+      <RotateCcwIcon />
+      {label}
+    </Button>
   );
 }
 
@@ -233,14 +281,15 @@ function Segmented<T extends string>({
 }
 
 function ReplyView({
-  draft,
+  draft: result,
   onRequest,
   onInsert,
 }: {
-  draft: ReplyDraft | undefined;
+  draft: AsyncResult<ReplyDraft>;
   onRequest: (request: AssistantRequest) => void;
   onInsert: (body: string) => void;
 }) {
+  const draft = result.data;
   const [tone, setTone] = useState<Tone>(draft?.tone ?? "friendly");
   const [length, setLength] = useState<ReplyLength>("medium");
   const [instructions, setInstructions] = useState("");
@@ -265,12 +314,17 @@ function ReplyView({
       <Button
         size="sm"
         className="w-full"
+        disabled={result.pending}
         onClick={() => onRequest({ kind: "draft", tone, length, instructions })}
       >
-        Draft reply
+        {result.pending ? "Drafting…" : draft ? "Draft again" : "Draft reply"}
       </Button>
 
-      {draft && (
+      {result.pending ? (
+        <Working label="Writing a draft…" />
+      ) : result.error ? (
+        <Failed error={result.error} onRetry={() => onRequest({ kind: "draft", tone, length, instructions })} />
+      ) : draft && (
         <div className="rounded-lg border border-border bg-background">
           <p className="border-b border-hairline px-3 py-2 font-mono text-[0.65rem] uppercase tracking-wider text-muted-foreground">
             Draft · {draft.tone}

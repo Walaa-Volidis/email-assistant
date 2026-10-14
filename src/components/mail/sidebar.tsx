@@ -18,11 +18,11 @@ import { Kbd } from "@/components/ui/kbd";
 import { MAILBOXES, initials, mailboxCount } from "@/lib/mail";
 import { cn } from "@/lib/utils";
 import { type SessionUser } from "@/schemas/auth";
-import { type EmailThread, type Mailbox } from "@/schemas/email";
+import { type Mailbox, type MailboxCounts } from "@/schemas/email";
 
 type SidebarProps = {
   user: SessionUser;
-  threads: EmailThread[];
+  counts: MailboxCounts | undefined;
   mailbox: Mailbox;
   onSelectMailbox: (mailbox: Mailbox) => void;
   onCompose: () => void;
@@ -33,7 +33,7 @@ type SidebarProps = {
 
 export function Sidebar({
   user,
-  threads,
+  counts,
   mailbox,
   onSelectMailbox,
   onCompose,
@@ -96,7 +96,7 @@ export function Sidebar({
       <nav aria-label="Mailboxes" className="flex-1 space-y-px px-2">
         {MAILBOXES.map((box) => {
           const active = box.id === mailbox;
-          const count = mailboxCount(threads, box);
+          const count = mailboxCount(box.id, counts);
           return (
             <button
               key={box.id}
