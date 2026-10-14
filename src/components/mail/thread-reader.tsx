@@ -15,9 +15,10 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatBytes, formatFullTime, formatListTime } from "@/lib/format";
-import { displayName, initials } from "@/lib/mail";
+import { displayName, initials, replyTarget } from "@/lib/mail";
 import { cn } from "@/lib/utils";
 import { type EmailMessage, type EmailThread } from "@/schemas/email";
 
@@ -27,6 +28,7 @@ type ThreadReaderProps = {
   assistantOpen: boolean;
   composer: { open: boolean; body: string };
   composerRef: RefObject<HTMLTextAreaElement | null>;
+  sending: boolean;
   onComposerChange: (next: { open: boolean; body: string }) => void;
   onSend: () => void;
   onArchive: () => void;
@@ -43,6 +45,7 @@ export function ThreadReader({
   assistantOpen,
   composer,
   composerRef,
+  sending,
   onComposerChange,
   onSend,
   onArchive,
@@ -52,37 +55,20 @@ export function ThreadReader({
   onBack,
 }: ThreadReaderProps) {
   const people = thread.participants.length;
-  const replyTo = [...thread.messages].reverse().find((m) => !selfEmails.has(m.from.email.toLowerCase()));
+  const target = replyTarget(thread, selfEmails);
+  const recipient = target ? target.to.map((a) => displayName(a, selfEmails)).join(", ") : null;
 
   return (
     <article aria-label={thread.subject} className="flex h-full min-w-0 flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-3">
-        {onBack && (
-          <Button variant="ghost" size="icon-sm" aria-label="Back to list" onClick={onBack}>
-            <ArrowLeftIcon />
-          </Button>
-        )}
-        <div className="flex-1" />
-        <ToolbarButton label="Archive" shortcut="E" onClick={onArchive}>
-          <ArchiveIcon />
-        </ToolbarButton>
-        <ToolbarButton label={thread.isStarred ? "Unstar" : "Star"} shortcut="S" onClick={onToggleStar}>
-          <StarIcon className={cn(thread.isStarred && "fill-tone-urgent text-tone-urgent")} />
-        </ToolbarButton>
-        <ToolbarButton label="Move to trash" shortcut="#" onClick={onTrash}>
-          <Trash2Icon />
-        </ToolbarButton>
-        <span aria-hidden className="mx-1.5 h-4 w-px bg-border" />
-        <ToolbarButton
-          label={assistantOpen ? "Hide assistant" : "Show assistant"}
-          shortcut="."
-          onClick={onToggleAssistant}
-          pressed={assistantOpen}
-          className="hidden lg:inline-flex"
-        >
-          <PanelRightIcon />
-        </ToolbarButton>
-      </header>
+      <ReaderToolbar
+        isStarred={thread.isStarred}
+        assistantOpen={assistantOpen}
+        onArchive={onArchive}
+        onTrash={onTrash}
+        onToggleStar={onToggleStar}
+        onToggleAssistant={onToggleAssistant}
+        onBack={onBack}
+      />
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto max-w-3xl px-6 pt-6 pb-10">
@@ -103,16 +89,112 @@ export function ThreadReader({
             ))}
           </ol>
 
-          <ReplyComposer
-            ref={composerRef}
-            recipient={replyTo ? displayName(replyTo.from, selfEmails) : null}
-            state={composer}
-            onChange={onComposerChange}
-            onSend={onSend}
-          />
+          {target ? (
+            <ReplyComposer
+              ref={composerRef}
+              recipient={recipient}
+              state={composer}
+              sending={sending}
+              onChange={onComposerChange}
+              onSend={onSend}
+            />
+          ) : (
+            <p className="mt-4 text-[0.75rem] text-muted-foreground">
+              No one else is on this thread to reply to.
+            </p>
+          )}
         </div>
       </ScrollArea>
     </article>
+  );
+}
+
+type ToolbarProps = {
+  isStarred: boolean;
+  assistantOpen: boolean;
+  onArchive: () => void;
+  onTrash: () => void;
+  onToggleStar: () => void;
+  onToggleAssistant: () => void;
+  onBack?: () => void;
+};
+
+function ReaderToolbar({
+  isStarred,
+  assistantOpen,
+  onArchive,
+  onTrash,
+  onToggleStar,
+  onToggleAssistant,
+  onBack,
+}: ToolbarProps) {
+  return (
+    <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-3">
+      {onBack && (
+        <Button variant="ghost" size="icon-sm" aria-label="Back to list" onClick={onBack}>
+          <ArrowLeftIcon />
+        </Button>
+      )}
+      <div className="flex-1" />
+      <ToolbarButton label="Archive" shortcut="E" onClick={onArchive}>
+        <ArchiveIcon />
+      </ToolbarButton>
+      <ToolbarButton label={isStarred ? "Unstar" : "Star"} shortcut="S" onClick={onToggleStar}>
+        <StarIcon className={cn(isStarred && "fill-tone-urgent text-tone-urgent")} />
+      </ToolbarButton>
+      <ToolbarButton label="Move to trash" shortcut="#" onClick={onTrash}>
+        <Trash2Icon />
+      </ToolbarButton>
+      <span aria-hidden className="mx-1.5 h-4 w-px bg-border" />
+      <ToolbarButton
+        label={assistantOpen ? "Hide assistant" : "Show assistant"}
+        shortcut="."
+        onClick={onToggleAssistant}
+        pressed={assistantOpen}
+        className="hidden lg:inline-flex"
+      >
+        <PanelRightIcon />
+      </ToolbarButton>
+    </header>
+  );
+}
+
+/**
+ * Shown while the full thread loads (or fails to). The list row already
+ * has the subject and star state, so the toolbar works immediately.
+ */
+export function ReaderPlaceholder({
+  subject,
+  error,
+  onRetry,
+  ...toolbar
+}: ToolbarProps & { subject: string | null; error: string | null; onRetry: () => void }) {
+  return (
+    <div className="flex h-full min-w-0 flex-col">
+      <ReaderToolbar {...toolbar} />
+      <div className="mx-auto w-full max-w-3xl px-6 pt-6">
+        {subject ? (
+          <h1 className="text-lg font-medium tracking-tight text-balance">{subject}</h1>
+        ) : (
+          <Skeleton className="h-6 w-2/3" />
+        )}
+        {error ? (
+          <div className="mt-6 space-y-3 rounded-lg border border-border bg-card p-4">
+            <p className="text-[0.8rem] text-muted-foreground">{error}</p>
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              Try again
+            </Button>
+          </div>
+        ) : (
+          <div aria-busy="true" aria-label="Loading thread" className="mt-6 space-y-3 rounded-lg border border-border bg-card p-4">
+            <Skeleton className="h-3 w-1/4" />
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-3 w-5/6" />
+            <Skeleton className="h-3 w-2/3" />
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

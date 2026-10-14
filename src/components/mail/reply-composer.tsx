@@ -12,11 +12,12 @@ type ReplyComposerProps = {
   ref: Ref<HTMLTextAreaElement>;
   recipient: string | null;
   state: ComposerState;
+  sending: boolean;
   onChange: (next: ComposerState) => void;
   onSend: () => void;
 };
 
-export function ReplyComposer({ ref, recipient, state, onChange, onSend }: ReplyComposerProps) {
+export function ReplyComposer({ ref, recipient, state, sending, onChange, onSend }: ReplyComposerProps) {
   if (!state.open) {
     return (
       <button
@@ -31,7 +32,7 @@ export function ReplyComposer({ ref, recipient, state, onChange, onSend }: Reply
     );
   }
 
-  const canSend = state.body.trim().length > 0;
+  const canSend = state.body.trim().length > 0 && !sending;
 
   return (
     <form
@@ -49,6 +50,7 @@ export function ReplyComposer({ ref, recipient, state, onChange, onSend }: Reply
         ref={ref}
         autoFocus
         value={state.body}
+        readOnly={sending}
         onChange={(e) => onChange({ ...state, body: e.target.value })}
         onKeyDown={(e) => {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
@@ -74,12 +76,13 @@ export function ReplyComposer({ ref, recipient, state, onChange, onSend }: Reply
           type="button"
           variant="ghost"
           size="sm"
+          disabled={sending}
           onClick={() => onChange({ open: false, body: "" })}
         >
           Discard
         </Button>
         <Button type="submit" size="sm" disabled={!canSend} className="gap-2">
-          Send
+          {sending ? "Sending…" : "Send"}
           <span className="flex gap-0.5 opacity-70">
             <Kbd className="bg-primary-foreground/15 text-primary-foreground">⌘</Kbd>
             <Kbd className="bg-primary-foreground/15 text-primary-foreground">↵</Kbd>

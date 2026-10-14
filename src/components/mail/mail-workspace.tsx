@@ -1,7 +1,7 @@
 "use client";
 
 import { MailOpenIcon } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { useSignOut } from "@/components/auth/use-sign-out";
@@ -11,40 +11,48 @@ import {
   type AssistantTab,
 } from "@/components/mail/assistant-panel";
 import { CommandMenu, type ThreadCommand } from "@/components/mail/command-menu";
+import {
+  useAssistant,
+  useMailboxCounts,
+  useSendReply,
+  useThread,
+  useThreadAction,
+  useThreadList,
+} from "@/components/mail/queries";
 import { ShortcutsDialog } from "@/components/mail/shortcuts-dialog";
 import { Sidebar } from "@/components/mail/sidebar";
 import { ThreadList } from "@/components/mail/thread-list";
-import { ThreadReader } from "@/components/mail/thread-reader";
-import { useMailRoute, useThreads } from "@/components/mail/use-mail-state";
+import { ReaderPlaceholder, ThreadReader } from "@/components/mail/thread-reader";
+import { useMailRoute } from "@/components/mail/use-mail-state";
 import { Kbd } from "@/components/ui/kbd";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useHotkeys, type Hotkey } from "@/hooks/use-hotkeys";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useStoredFlag } from "@/hooks/use-stored-flag";
-import { type AiSamples } from "@/lib/fixtures/threads";
-import { MAILBOXES, matchesQuery, threadsIn } from "@/lib/mail";
+import { errorMessage } from "@/lib/api/client";
+import { INVERSE_ACTION, MAILBOXES, replyTarget, stillInMailbox } from "@/lib/mail";
 import { type SessionUser } from "@/schemas/auth";
-import { type EmailThread, type Mailbox } from "@/schemas/email";
+import { type Mailbox, type ThreadAction, type ThreadListItem } from "@/schemas/email";
 
 type ComposerState = { open: boolean; body: string };
 const CLOSED: ComposerState = { open: false, body: "" };
 
-type MailWorkspaceProps = {
-  user: SessionUser;
-  initialThreads: EmailThread[];
-  aiSamples: AiSamples;
-  /** Addresses rendered as "Me"; includes the sample mailbox owner until Step 5. */
-  selfEmails: string[];
+const ACTION_TOASTS: Partial<Record<ThreadAction, string>> = {
+  archive: "Archived",
+  trash: "Moved to trash",
+  unarchive: "Moved to inbox",
+  untrash: "Restored from trash",
 };
 
-export function MailWorkspace({ user, initialThreads, aiSamples, selfEmails }: MailWorkspaceProps) {
-  const { threads, dispatch } = useThreads(initialThreads);
+export function MailWorkspace({ user }: { user: SessionUser }) {
   const { mailbox, threadId, navigate } = useMailRoute();
   const { signOut } = useSignOut();
   const isDesktop = useMediaQuery("(min-width: 768px)");
   const isWide = useMediaQuery("(min-width: 1180px)");
 
   const [query, setQuery] = useState("");
+  const search = useDebouncedValue(query.trim(), 350);
   const [assistantOpen, setAssistantOpen] = useStoredFlag("relay:assistant-open", true);
   const [assistantTab, setAssistantTab] = useState<AssistantTab>("brief");
   const [composers, setComposers] = useState<Record<string, ComposerState>>({});
@@ -53,16 +61,34 @@ export function MailWorkspace({ user, initialThreads, aiSamples, selfEmails }: M
 
   const searchRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
-  const self = useMemo(() => new Set(selfEmails.map((e) => e.toLowerCase())), [selfEmails]);
+  const self = useMemo(() => new Set([user.email.toLowerCase()]), [user.email]);
 
-  const visible = useMemo(
-    () => threadsIn(threads, mailbox).filter((thread) => matchesQuery(thread, query)),
-    [threads, mailbox, query],
-  );
-  const selected = threads.find((thread) => thread.id === threadId) ?? null;
-  const selectedIndex = selected ? visible.findIndex((t) => t.id === selected.id) : -1;
-  const composer = (selected && composers[selected.id]) || CLOSED;
-  const showAssistant = assistantOpen && isWide && selected !== null;
+  const list = useThreadList(mailbox, search);
+  const detail = useThread(threadId);
+  const counts = useMailboxCounts();
+  const { mutate: runAction } = useThreadAction();
+  const sendReply = useSendReply();
+  const assistant = useAssistant(threadId);
+
+  const visible = useMemo(() => {
+    const byId = new Map<string, ThreadListItem>();
+    for (const page of list.data?.pages ?? []) {
+      for (const thread of page.threads) if (!byId.has(thread.id)) byId.set(thread.id, thread);
+    }
+    return [...byId.values()].filter((thread) => stillInMailbox(thread, mailbox));
+  }, [list.data, mailbox]);
+
+  const listItem = visible.find((t) => t.id === threadId) ?? null;
+  const thread = detail.data ?? null;
+  const isStarred = thread?.isStarred ?? listItem?.isStarred ?? false;
+  const selectedIndex = threadId ? visible.findIndex((t) => t.id === threadId) : -1;
+  const composer = (threadId && composers[threadId]) || CLOSED;
+  const showAssistant = assistantOpen && isWide && threadId !== null;
+
+  // Opening an unread thread marks it read, in Gmail too.
+  useEffect(() => {
+    if (thread?.isUnread) runAction({ threadId: thread.id, action: "markRead" });
+  }, [thread?.id, thread?.isUnread, runAction]);
 
   function toggleAssistant(open = !assistantOpen) {
     setAssistantOpen(open);
@@ -70,7 +96,6 @@ export function MailWorkspace({ user, initialThreads, aiSamples, selfEmails }: M
 
   function openThread(id: string | null) {
     navigate({ t: id });
-    if (id) dispatch({ type: "markRead", id });
   }
 
   function step(delta: 1 | -1) {
@@ -78,6 +103,9 @@ export function MailWorkspace({ user, initialThreads, aiSamples, selfEmails }: M
     const nextIndex =
       selectedIndex === -1 ? 0 : Math.min(Math.max(selectedIndex + delta, 0), visible.length - 1);
     openThread(visible[nextIndex]!.id);
+    if (delta === 1 && nextIndex >= visible.length - 3 && list.hasNextPage && !list.isFetchingNextPage) {
+      void list.fetchNextPage();
+    }
   }
 
   function selectMailbox(box: Mailbox) {
@@ -85,30 +113,48 @@ export function MailWorkspace({ user, initialThreads, aiSamples, selfEmails }: M
     navigate({ box, t: null });
   }
 
-  /** Removes the thread from view and moves to its neighbour, like Gmail's auto-advance. */
+  function act(action: ThreadAction, id: string, subject: string) {
+    runAction(
+      { threadId: id, action },
+      {
+        onError: (error) => toast.error(errorMessage(error), { description: subject }),
+      },
+    );
+    const message = ACTION_TOASTS[action];
+    if (message) {
+      toast(message, {
+        description: subject,
+        action: { label: "Undo", onClick: () => act(INVERSE_ACTION[action], id, subject) },
+      });
+    }
+  }
+
+  /** Moves the thread out and opens its neighbour, like Gmail's auto-advance. */
   function removeAndAdvance(action: "archive" | "trash") {
-    if (!selected) return;
+    if (!threadId) return;
     const neighbour = visible[selectedIndex + 1] ?? visible[selectedIndex - 1] ?? null;
-    dispatch({ type: action, id: selected.id });
+    act(action, threadId, thread?.subject ?? listItem?.subject ?? "");
     openThread(neighbour?.id ?? null);
-    toast(action === "archive" ? "Archived" : "Moved to trash", {
-      description: selected.subject,
-    });
+  }
+
+  function toggleStar() {
+    if (!threadId) return;
+    act(isStarred ? "unstar" : "star", threadId, thread?.subject ?? "");
   }
 
   function setComposer(next: ComposerState) {
-    if (!selected) return;
-    setComposers((all) => ({ ...all, [selected.id]: next }));
+    if (!threadId) return;
+    setComposers((all) => ({ ...all, [threadId]: next }));
   }
 
   function openReply() {
-    if (!selected) return;
+    if (!thread) return;
     setComposer({ ...composer, open: true });
     requestAnimationFrame(() => composerRef.current?.focus());
   }
 
   function insertIntoReply(body: string) {
-    if (!selected) return;
+    if (!thread) return;
     setComposer({ open: true, body });
     requestAnimationFrame(() => {
       composerRef.current?.focus();
@@ -116,20 +162,34 @@ export function MailWorkspace({ user, initialThreads, aiSamples, selfEmails }: M
     });
   }
 
-  // Steps 4–5 replace these placeholders with real calls.
-  function notConnected(what: string) {
-    toast(`${what} isn't connected yet`, {
-      description: "It goes live once Gmail and OpenAI are wired in.",
-    });
+  function send() {
+    if (!thread) return;
+    const target = replyTarget(thread, self);
+    if (!target) return;
+    sendReply.mutate(
+      {
+        threadId: thread.id,
+        inReplyToMessageId: target.message.id,
+        to: target.to,
+        cc: [],
+        subject: thread.subject,
+        body: composer.body,
+      },
+      {
+        onSuccess: () => {
+          setComposers((all) => ({ ...all, [thread.id]: CLOSED }));
+          toast("Reply sent", { description: thread.subject });
+        },
+        // The draft stays in the composer so nothing is lost.
+        onError: (error) => toast.error(errorMessage(error)),
+      },
+    );
   }
 
   function handleAssistantRequest(request: AssistantRequest) {
-    const labels: Record<AssistantRequest["kind"], string> = {
-      summarize: "Summarizing",
-      draft: "Drafting",
-      "follow-ups": "Follow-up suggestions",
-    };
-    notConnected(labels[request.kind]);
+    if (request.kind === "summarize") assistant.summary.run();
+    else if (request.kind === "follow-ups") assistant.followUps.run();
+    else assistant.draft.run({ tone: request.tone, length: request.length, instructions: request.instructions });
   }
 
   function handleThreadCommand(command: ThreadCommand) {
@@ -139,14 +199,23 @@ export function MailWorkspace({ user, initialThreads, aiSamples, selfEmails }: M
       case "archive":
         return removeAndAdvance("archive");
       case "star":
-        return selected && dispatch({ type: "toggleStar", id: selected.id });
+        return toggleStar();
       case "summarize":
-      case "draft":
+        toggleAssistant(true);
+        setAssistantTab("brief");
+        return assistant.summary.run();
       case "follow-ups":
         toggleAssistant(true);
-        setAssistantTab(command === "summarize" ? "brief" : command === "draft" ? "reply" : "follow-ups");
-        return;
+        setAssistantTab("follow-ups");
+        return assistant.followUps.run();
+      case "draft":
+        toggleAssistant(true);
+        return setAssistantTab("reply");
     }
+  }
+
+  function notConnected(what: string) {
+    toast(`${what} isn't available yet`, { description: "Reply from an open thread for now." });
   }
 
   const hotkeys: Hotkey[] = [
@@ -162,7 +231,7 @@ export function MailWorkspace({ user, initialThreads, aiSamples, selfEmails }: M
     { keys: "r", handler: openReply },
     { keys: "e", handler: () => removeAndAdvance("archive") },
     { keys: "#", handler: () => removeAndAdvance("trash") },
-    { keys: "s", handler: () => selected && dispatch({ type: "toggleStar", id: selected.id }) },
+    { keys: "s", handler: toggleStar },
     { keys: ".", handler: () => toggleAssistant() },
     { keys: "1", handler: () => setAssistantTab("brief") },
     { keys: "2", handler: () => setAssistantTab("reply") },
@@ -174,7 +243,7 @@ export function MailWorkspace({ user, initialThreads, aiSamples, selfEmails }: M
   const sidebar = (
     <Sidebar
       user={user}
-      threads={threads}
+      counts={counts.data}
       mailbox={mailbox}
       onSelectMailbox={selectMailbox}
       onCompose={() => notConnected("New message")}
@@ -184,12 +253,19 @@ export function MailWorkspace({ user, initialThreads, aiSamples, selfEmails }: M
     />
   );
 
-  const list = (
+  const threadList = (
     <ThreadList
       ref={searchRef}
       mailbox={mailbox}
       threads={visible}
-      selectedId={selected?.id ?? null}
+      status={list.status}
+      error={list.error ? errorMessage(list.error) : null}
+      refreshing={list.isFetching && !list.isPending && !list.isFetchingNextPage}
+      hasMore={list.hasNextPage}
+      loadingMore={list.isFetchingNextPage}
+      onLoadMore={() => void list.fetchNextPage()}
+      onRetry={() => void list.refetch()}
+      selectedId={threadId}
       query={query}
       onQueryChange={setQuery}
       onSelect={openThread}
@@ -197,24 +273,37 @@ export function MailWorkspace({ user, initialThreads, aiSamples, selfEmails }: M
     />
   );
 
-  const reader = selected ? (
+  const toolbarProps = {
+    isStarred,
+    assistantOpen: showAssistant,
+    onArchive: () => removeAndAdvance("archive"),
+    onTrash: () => removeAndAdvance("trash"),
+    onToggleStar: toggleStar,
+    onToggleAssistant: () => toggleAssistant(),
+    onBack: isDesktop ? undefined : () => openThread(null),
+  };
+
+  const reader = !threadId ? (
+    <EmptyReader count={visible.length} />
+  ) : thread ? (
     <ThreadReader
-      key={selected.id}
-      thread={selected}
+      key={thread.id}
+      thread={thread}
       selfEmails={self}
-      assistantOpen={showAssistant}
       composer={composer}
       composerRef={composerRef}
+      sending={sendReply.isPending}
       onComposerChange={setComposer}
-      onSend={() => notConnected("Sending")}
-      onArchive={() => removeAndAdvance("archive")}
-      onTrash={() => removeAndAdvance("trash")}
-      onToggleStar={() => dispatch({ type: "toggleStar", id: selected.id })}
-      onToggleAssistant={() => toggleAssistant()}
-      onBack={isDesktop ? undefined : () => openThread(null)}
+      onSend={send}
+      {...toolbarProps}
     />
   ) : (
-    <EmptyReader count={visible.length} />
+    <ReaderPlaceholder
+      subject={listItem?.subject ?? null}
+      error={detail.error ? errorMessage(detail.error) : null}
+      onRetry={() => void detail.refetch()}
+      {...toolbarProps}
+    />
   );
 
   return (
@@ -227,7 +316,7 @@ export function MailWorkspace({ user, initialThreads, aiSamples, selfEmails }: M
             {sidebar}
           </ResizablePanel>
           <ResizablePanel id="list" defaultSize={360} minSize={300} maxSize={520}>
-            {list}
+            {threadList}
           </ResizablePanel>
           <ResizableHandle />
           <ResizablePanel id="reader" minSize={420}>
@@ -238,9 +327,11 @@ export function MailWorkspace({ user, initialThreads, aiSamples, selfEmails }: M
               <ResizableHandle />
               <ResizablePanel id="assistant" defaultSize={320} minSize={280} maxSize={480}>
                 <AssistantPanel
-                  key={selected.id}
-                  thread={selected}
-                  sample={aiSamples[selected.id]}
+                  key={threadId}
+                  messageCount={thread?.messageCount ?? listItem?.messageCount ?? 1}
+                  summary={assistant.summary}
+                  draft={assistant.draft}
+                  followUps={assistant.followUps}
                   tab={assistantTab}
                   onTabChange={setAssistantTab}
                   onRequest={handleAssistantRequest}
@@ -252,13 +343,13 @@ export function MailWorkspace({ user, initialThreads, aiSamples, selfEmails }: M
           )}
         </ResizablePanelGroup>
       ) : (
-        <div className="min-w-0 flex-1">{selected ? reader : list}</div>
+        <div className="min-w-0 flex-1">{threadId ? reader : threadList}</div>
       )}
 
       <CommandMenu
         open={commandOpen}
         onOpenChange={setCommandOpen}
-        hasThread={selected !== null}
+        hasThread={threadId !== null}
         onMailbox={selectMailbox}
         onThreadCommand={handleThreadCommand}
         onCompose={() => notConnected("New message")}

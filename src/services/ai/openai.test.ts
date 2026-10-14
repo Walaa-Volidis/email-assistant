@@ -124,6 +124,14 @@ describe("generateStructured", () => {
     await expect(generateStructured(request)).rejects.toMatchObject({ code: "RATE_LIMITED" });
 
     vi.spyOn(console, "error").mockImplementation(() => {});
+    parseMock.mockRejectedValueOnce(
+      new RateLimitError(429, { code: "credit_balance_exhausted" }, "no credits", new Headers()),
+    );
+    await expect(generateStructured(request)).rejects.toMatchObject({
+      code: "INTERNAL",
+      message: expect.stringContaining("out of credits"),
+    });
+
     parseMock.mockRejectedValueOnce(new AuthenticationError(401, undefined, "bad key", new Headers()));
     await expect(generateStructured(request)).rejects.toMatchObject({ code: "INTERNAL" });
   });
