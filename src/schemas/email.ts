@@ -3,7 +3,7 @@ import { z } from "zod";
 import { ZEmailAddressSchema, ZGmailIdSchema, ZIsoDateTimeSchema } from "@/schemas/common";
 
 /** Mailboxes surfaced in the sidebar. Map 1:1 to Gmail system labels. */
-export const ZMailboxSchema = z.enum(["inbox", "starred", "sent", "drafts", "archive", "trash"]);
+export const ZMailboxSchema = z.enum(["inbox", "starred", "sent", "waiting", "drafts", "archive", "trash"]);
 
 export const ZAttachmentSchema = z.object({
   id: z.string().min(1),
@@ -38,6 +38,8 @@ export const ZThreadListItemSchema = z.object({
   participants: z.array(ZEmailAddressSchema).min(1),
   messageCount: z.number().int().positive(),
   lastMessageAt: ZIsoDateTimeSchema,
+  /** Sender of the newest message; drives the Waiting view and reply chips. */
+  lastFrom: ZEmailAddressSchema,
   isUnread: z.boolean(),
   isStarred: z.boolean(),
   hasAttachments: z.boolean(),

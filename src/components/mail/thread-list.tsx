@@ -146,6 +146,7 @@ export const ThreadList = forwardRef<HTMLInputElement, ThreadListProps>(function
                       selected={selected}
                       onSelect={onSelect}
                       selfEmails={selfEmails}
+                      showWaiting={mailbox === "waiting"}
                     />
                   </li>
                 );
@@ -180,10 +181,12 @@ type ThreadRowProps = {
   selected: boolean;
   onSelect: (id: string) => void;
   selfEmails: ReadonlySet<string>;
+  /** Waiting view: show how long the reply has been outstanding. */
+  showWaiting: boolean;
 };
 
 const ThreadRow = forwardRef<HTMLButtonElement, ThreadRowProps>(function ThreadRow(
-  { thread, selected, onSelect, selfEmails },
+  { thread, selected, onSelect, selfEmails, showWaiting },
   ref,
 ) {
   const senders =
@@ -252,17 +255,31 @@ const ThreadRow = forwardRef<HTMLButtonElement, ThreadRowProps>(function ThreadR
         {thread.isStarred && (
           <StarIcon aria-label="Starred" className="size-3 shrink-0 fill-tone-urgent text-tone-urgent" />
         )}
+        {showWaiting && (
+          <span
+            suppressHydrationWarning
+            className="tabular shrink-0 rounded-sm bg-tone-urgent/12 px-1.5 font-mono text-[0.65rem] text-tone-urgent"
+          >
+            waiting {daysSince(thread.lastMessageAt)}d
+          </span>
+        )}
       </div>
       <p className="mt-0.5 line-clamp-1 pl-3.5 text-[0.75rem] text-muted-foreground">{thread.snippet}</p>
     </button>
   );
 });
 
+function daysSince(iso: string): number {
+  return Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 86_400_000));
+}
+
 function EmptyList({ mailbox, searching }: { mailbox: Mailbox; searching: boolean }) {
   const message = searching
     ? "No threads match. Try fewer words, or Gmail operators like from: or has:attachment."
     : mailbox === "inbox"
       ? "Inbox zero. New mail will show up here."
-      : `Nothing in ${mailboxMeta(mailbox).label.toLowerCase()}.`;
+      : mailbox === "waiting"
+        ? "No one owes you a reply. Emails you sent more than 2 days ago without an answer show up here."
+        : `Nothing in ${mailboxMeta(mailbox).label.toLowerCase()}.`;
   return <p className="px-4 py-10 text-center text-[0.8rem] text-muted-foreground">{message}</p>;
 }

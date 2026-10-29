@@ -4,14 +4,17 @@ import { generateStructured } from "@/services/ai/openai";
 import {
   draftReplyInstructions,
   followUpInstructions,
+  quickReplyInstructions,
   summarizeInstructions,
 } from "@/services/ai/prompts";
 import { serializeThread } from "@/services/ai/thread-context";
 import {
   ZFollowUpSuggestionsSchema,
+  ZQuickRepliesSchema,
   ZReplyDraftSchema,
   ZThreadSummarySchema,
   type FollowUpSuggestions,
+  type QuickReplies,
   type ReplyDraft,
   type ReplyLength,
   type ThreadSummary,
@@ -60,5 +63,16 @@ export function suggestFollowUps({ thread, user, now }: AssistantInput): Promise
     instructions: followUpInstructions(user, now ?? new Date().toISOString()),
     input: serializeThread(thread, user.email),
     userId: user.id,
+  });
+}
+
+export function suggestQuickReplies({ thread, user, now }: AssistantInput): Promise<QuickReplies> {
+  return generateStructured({
+    name: "quick_replies",
+    schema: ZQuickRepliesSchema,
+    instructions: quickReplyInstructions(user, now ?? new Date().toISOString()),
+    input: serializeThread(thread, user.email),
+    userId: user.id,
+    maxOutputTokens: 1_500,
   });
 }

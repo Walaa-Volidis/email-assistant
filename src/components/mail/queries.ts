@@ -18,7 +18,9 @@ import { applyActionToLabels, INVERSE_ACTION } from "@/lib/mail";
 import {
   ZFollowUpSuggestionsSchema,
   ZReplyDraftSchema,
+  ZQuickRepliesSchema,
   ZThreadSummarySchema,
+  type QuickReplies,
   type ReplyDraft,
   type ReplyLength,
   type Tone,
@@ -47,6 +49,7 @@ export const mailKeys = {
 const aiKeys = {
   summary: (threadId: string) => ["ai", "summary", threadId] as const,
   followUps: (threadId: string) => ["ai", "follow-ups", threadId] as const,
+  quickReplies: (threadId: string) => ["ai", "quick-replies", threadId] as const,
   draft: (threadId: string) => ["ai", "draft", threadId] as const,
 };
 
@@ -197,6 +200,28 @@ export function useSendMessage() {
 }
 
 // ---- Assistant ----------------------------------------------------------------
+
+/**
+ * Reply chips for an open thread. Fetched automatically, but only when the
+ * latest message is from someone else (the only time a reply makes sense),
+ * once per thread, without retries: each call costs tokens.
+ */
+export function useQuickReplies(threadId: string | null, enabled: boolean): AsyncResult<QuickReplies> {
+  const query = useQuery({
+    queryKey: aiKeys.quickReplies(threadId ?? ""),
+    queryFn: ({ signal }) =>
+      apiFetch("/api/ai/quick-replies", ZQuickRepliesSchema, {
+        method: "POST",
+        body: { threadId },
+        signal,
+      }),
+    enabled: enabled && threadId !== null,
+    staleTime: Infinity,
+    gcTime: 30 * 60_000,
+    retry: false,
+  });
+  return { data: query.data, pending: query.isFetching, error: query.error };
+}
 
 export type AsyncResult<T> = { data: T | undefined; pending: boolean; error: unknown };
 

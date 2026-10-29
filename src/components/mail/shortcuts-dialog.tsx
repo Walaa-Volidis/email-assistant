@@ -14,6 +14,7 @@ const GROUPS: { title: string; items: [keys: string[], label: string][] }[] = [
       [["G", "I"], "Go to inbox"],
       [["G", "S"], "Go to starred"],
       [["G", "T"], "Go to sent"],
+      [["G", "W"], "Go to waiting"],
       [["G", "D"], "Go to drafts"],
       [["G", "A"], "Go to archive"],
       [["⌘", "K"], "Command menu"],

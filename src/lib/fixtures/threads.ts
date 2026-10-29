@@ -68,6 +68,7 @@ function thread(
     participants,
     messageCount: messages.length,
     lastMessageAt: last.sentAt,
+    lastFrom: last.from,
     isUnread: messages.some((m) => m.isUnread),
     isStarred: labelIds.includes("STARRED"),
     hasAttachments: messages.some((m) => m.attachments.length > 0),
