@@ -15,6 +15,7 @@ import { ComposeDialog, EMPTY_COMPOSE, type ComposeDraft } from "@/components/ma
 import {
   useAssistant,
   useMailboxCounts,
+  useQuickReplies,
   useSendMessage,
   useSendReply,
   useThread,
@@ -26,6 +27,7 @@ import { Sidebar } from "@/components/mail/sidebar";
 import { ThreadList } from "@/components/mail/thread-list";
 import { ReaderPlaceholder, ThreadReader } from "@/components/mail/thread-reader";
 import { useMailRoute } from "@/components/mail/use-mail-state";
+import { useUndoSend } from "@/components/mail/use-undo-send";
 import { Kbd } from "@/components/ui/kbd";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
@@ -79,6 +81,12 @@ export function MailWorkspace({ user }: { user: SessionUser }) {
   const sendReply = useSendReply();
   const sendMessage = useSendMessage();
   const assistant = useAssistant(threadId);
+  const scheduleSend = useUndoSend();
+  const lastFromOther = (() => {
+    const last = detail.data?.messages.at(-1);
+    return last ? !self.has(last.from.email.toLowerCase()) : false;
+  })();
+  const quickReplies = useQuickReplies(threadId, lastFromOther);
 
   const visible = useMemo(() => {
     const byId = new Map<string, ThreadListItem>();
@@ -112,6 +120,8 @@ export function MailWorkspace({ user }: { user: SessionUser }) {
   function openThread(id: string | null) {
     autoReadRef.current = null;
     navigate({ t: id });
+    // In Waiting, the useful view of a thread is "how do I nudge them".
+    if (id && mailbox === "waiting") setAssistantTab("follow-ups");
   }
 
   /** Like Gmail: marking a thread unread closes it so it stays unread. */
@@ -128,14 +138,27 @@ export function MailWorkspace({ user }: { user: SessionUser }) {
   }
 
   function sendNewMessage(message: ComposeRequest) {
-    sendMessage.mutate(message, {
-      onSuccess: () => {
-        setComposeOpen(false);
-        setComposeDraft(EMPTY_COMPOSE);
-        toast("Message sent", { description: message.subject || "(no subject)" });
-      },
-      // The draft stays in the dialog so nothing is lost.
-      onError: (error) => toast.error(errorMessage(error)),
+    const draft = composeDraft;
+    const restore = () => {
+      setComposeDraft(draft);
+      setComposeOpen(true);
+    };
+    const subject = message.subject || "(no subject)";
+
+    setComposeOpen(false);
+    setComposeDraft(EMPTY_COMPOSE);
+    scheduleSend({
+      key: `compose-${Date.now()}`,
+      description: subject,
+      undo: restore,
+      send: () =>
+        sendMessage
+          .mutateAsync(message)
+          .then(() => toast("Message sent", { description: subject }))
+          .catch((error: unknown) => {
+            restore();
+            toast.error(errorMessage(error), { description: "Your message is back in the editor." });
+          }),
     });
   }
 
@@ -202,24 +225,26 @@ export function MailWorkspace({ user }: { user: SessionUser }) {
     if (!thread) return;
     const target = replyTarget(thread, self);
     if (!target) return;
-    sendReply.mutate(
-      {
-        threadId: thread.id,
-        inReplyToMessageId: target.message.id,
-        to: target.to,
-        cc: [],
-        subject: thread.subject,
-        body: composer.body,
-      },
-      {
-        onSuccess: () => {
-          setComposers((all) => ({ ...all, [thread.id]: CLOSED }));
-          toast("Reply sent", { description: thread.subject });
-        },
-        // The draft stays in the composer so nothing is lost.
-        onError: (error) => toast.error(errorMessage(error)),
-      },
-    );
+    const { id, subject } = thread;
+    const body = composer.body;
+    const restore = () => setComposers((all) => ({ ...all, [id]: { open: true, body } }));
+
+    // Close now; the reply is held for the undo window before it goes out.
+    setComposers((all) => ({ ...all, [id]: CLOSED }));
+    scheduleSend({
+      key: `reply-${id}-${Date.now()}`,
+      description: subject,
+      undo: restore,
+      // mutateAsync, not per-call callbacks: those only fire for the latest mutate().
+      send: () =>
+        sendReply
+          .mutateAsync({ threadId: id, inReplyToMessageId: target.message.id, to: target.to, cc: [], subject, body })
+          .then(() => toast("Reply sent", { description: subject }))
+          .catch((error: unknown) => {
+            restore();
+            toast.error(errorMessage(error), { description: "Your reply is back in the composer." });
+          }),
+    });
   }
 
   function handleAssistantRequest(request: AssistantRequest) {
@@ -329,6 +354,7 @@ export function MailWorkspace({ user }: { user: SessionUser }) {
       composer={composer}
       composerRef={composerRef}
       sending={sendReply.isPending}
+      quickReplies={quickReplies}
       onComposerChange={setComposer}
       onSend={send}
       {...toolbarProps}

@@ -43,11 +43,27 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
   return results;
 }
 
+/** Sent threads newer than this are checked for a missing reply. */
+export const WAITING_WINDOW_DAYS = 30;
+/** A reply counts as overdue after this long. */
+export const WAITING_AFTER_DAYS = 2;
+
+/**
+ * True when the user sent the newest message and nobody has answered for at
+ * least WAITING_AFTER_DAYS. Pure, so the Waiting view's rule is unit-tested.
+ */
+export function isAwaitingReply(thread: ThreadListItem, userEmail: string, now: number = Date.now()): boolean {
+  const ageDays = (now - Date.parse(thread.lastMessageAt)) / 86_400_000;
+  return thread.lastFrom.email.toLowerCase() === userEmail.toLowerCase() && ageDays >= WAITING_AFTER_DAYS;
+}
+
 /** How each mailbox maps onto Gmail labels and search. */
 const MAILBOX_FILTERS: Record<Mailbox, { labelIds?: string[]; q?: string; includeSpamTrash?: boolean }> = {
   inbox: { labelIds: ["INBOX"] },
   starred: { labelIds: ["STARRED"] },
   sent: { labelIds: ["SENT"] },
+  // Candidates only: isAwaitingReply keeps threads where the user spoke last.
+  waiting: { q: `in:sent -in:trash newer_than:${WAITING_WINDOW_DAYS}d` },
   drafts: { labelIds: ["DRAFT"] },
   // Gmail has no archive label: it's everything outside these.
   // -in:sent drops threads made only of the user's own messages.
@@ -63,7 +79,7 @@ const LIST_HEADERS = ["From", "To", "Cc", "Subject", "Date", "Message-ID"];
  * Gmail's per-user rate limit.
  */
 export async function listThreads(
-  { gmail }: GmailContext,
+  { gmail, user }: GmailContext,
   { mailbox, q, pageToken, pageSize }: ThreadListQuery,
 ): Promise<ThreadListPage> {
   const filter = MAILBOX_FILTERS[mailbox];
@@ -94,8 +110,10 @@ export async function listThreads(
     }
   });
 
+  const threads = rows.filter((row): row is ThreadListItem => row !== null);
   return {
-    threads: rows.filter((row): row is ThreadListItem => row !== null),
+    // A Waiting page can come back shorter than pageSize; paging still works.
+    threads: mailbox === "waiting" ? threads.filter((t) => isAwaitingReply(t, user.email)) : threads,
     nextPageToken: list.nextPageToken ?? null,
   };
 }

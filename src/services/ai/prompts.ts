@@ -75,3 +75,13 @@ Suggest up to 3 follow-ups the user should make on this thread, most important f
 - draftBody: a ready-to-send message (no signature) when useful, otherwise null.
 Return an empty list when nothing needs following up.`;
 }
+
+export function quickReplyInstructions(user: SessionUser, now: string): string {
+  return `${preamble(user, now)}
+
+Suggest up to 3 short replies the user could send to the latest message, each taking a genuinely different position (e.g. accept, propose an alternative, ask for detail).
+- label: 2 to 6 words, as the user would say it.
+- body: one to three sentences, ready to send, greeting the recipient by first name, no signature.
+- Never invent facts, dates or numbers; prefer replies that don't need them.
+Return an empty list when the latest message doesn't call for a reply from the user.`;
+}

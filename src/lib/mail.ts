@@ -1,6 +1,7 @@
 import {
   ArchiveIcon,
   FileIcon,
+  HourglassIcon,
   InboxIcon,
   SendIcon,
   StarIcon,
@@ -30,6 +31,7 @@ export const MAILBOXES: readonly MailboxMeta[] = [
   { id: "inbox", label: "Inbox", icon: InboxIcon, hotkey: "i" },
   { id: "starred", label: "Starred", icon: StarIcon, hotkey: "s" },
   { id: "sent", label: "Sent", icon: SendIcon, hotkey: "t" },
+  { id: "waiting", label: "Waiting", icon: HourglassIcon, hotkey: "w" },
   { id: "drafts", label: "Drafts", icon: FileIcon, hotkey: "d" },
   { id: "archive", label: "Archive", icon: ArchiveIcon, hotkey: "a" },
   { id: "trash", label: "Trash", icon: Trash2Icon, hotkey: "#" },

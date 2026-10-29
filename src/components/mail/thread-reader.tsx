@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import { useState, type ReactNode, type RefObject } from "react";
 
+import { EmailBody } from "@/components/mail/email-body";
+import { QuickReplies } from "@/components/mail/quick-replies";
 import { ReplyComposer } from "@/components/mail/reply-composer";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -20,6 +22,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { formatBytes, formatFullTime, formatListTime } from "@/lib/format";
 import { displayName, initials, replyTarget } from "@/lib/mail";
 import { cn } from "@/lib/utils";
+import { type AsyncResult } from "@/components/mail/queries";
+import { type QuickReplies as QuickRepliesData } from "@/schemas/ai";
 import { type EmailMessage, type EmailThread } from "@/schemas/email";
 
 type ThreadReaderProps = {
@@ -29,6 +33,7 @@ type ThreadReaderProps = {
   composer: { open: boolean; body: string };
   composerRef: RefObject<HTMLTextAreaElement | null>;
   sending: boolean;
+  quickReplies: AsyncResult<QuickRepliesData>;
   onComposerChange: (next: { open: boolean; body: string }) => void;
   onSend: () => void;
   onArchive: () => void;
@@ -46,6 +51,7 @@ export function ThreadReader({
   composer,
   composerRef,
   sending,
+  quickReplies,
   onComposerChange,
   onSend,
   onArchive,
@@ -88,6 +94,13 @@ export function ThreadReader({
               />
             ))}
           </ol>
+
+          {target && !composer.open && (
+            <QuickReplies
+              result={quickReplies}
+              onPick={(body) => onComposerChange({ open: true, body })}
+            />
+          )}
 
           {target ? (
             <ReplyComposer
@@ -303,8 +316,8 @@ function MessageItem({
         </time>
       </button>
 
-      <div className="mt-3 pl-9 text-[0.85rem] leading-relaxed whitespace-pre-wrap text-foreground/90">
-        {message.bodyText}
+      <div className="mt-3 pl-9">
+        <EmailBody text={message.bodyText} html={message.bodyHtml} />
       </div>
 
       {message.attachments.length > 0 && (

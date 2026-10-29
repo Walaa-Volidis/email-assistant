@@ -83,7 +83,25 @@ export const ZSuggestFollowUpsRequestSchema = z.object({
   now: ZIsoDateTimeSchema.optional(),
 });
 
+// ---- Smart replies ------------------------------------------------------------
+
+export const ZQuickReplySchema = z.object({
+  label: z.string().describe("2 to 6 words shown on the chip, e.g. 'Thursday works'"),
+  body: z.string().describe("The full reply text, one to three sentences, no signature"),
+});
+
+export const ZQuickRepliesSchema = z.object({
+  replies: z.array(ZQuickReplySchema).max(3),
+});
+
+export const ZQuickRepliesRequestSchema = z.object({
+  threadId: ZGmailIdSchema,
+});
+
 export type Tone = z.infer<typeof ZToneSchema>;
+export type QuickReply = z.infer<typeof ZQuickReplySchema>;
+export type QuickReplies = z.infer<typeof ZQuickRepliesSchema>;
+export type QuickRepliesRequest = z.infer<typeof ZQuickRepliesRequestSchema>;
 export type ReplyLength = z.infer<typeof ZReplyLengthSchema>;
 export type Sentiment = z.infer<typeof ZSentimentSchema>;
 export type ActionItem = z.infer<typeof ZActionItemSchema>;
